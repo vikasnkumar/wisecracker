@@ -19,11 +19,13 @@ WisecrackMD5 is a simple program that uses OpenCL to perform parallel MD5
 cracking for 8-character passwords. The aim is to be able to take an MD5 sum and
 reverse it into the 8 characters that created the sum in the first place.
 
-The user provides an MD5 checksum for which
-they want to find an 8-character password that might match the checksum.
+Let us take the situation where the user ends up finding a database with MD5
+sums of all the passwords from a random website. The user decides to crack such
+passwords to get access to those accounts, similar to Jack the Ripper software.
+Let us assume that the password is of maximum 8-character length.
 
-Obviously, we expect the user to know that the MD5 sum is that of an 8-character
-password. 
+The user provides an MD5 checksum for which they want to find an 8-character
+password that might match the checksum.
 
 The search space for characters is currently [A-Za-z0-9_$]. We will add more
 characters later and allow for < 8 password matching as well when time permits.
@@ -48,6 +50,10 @@ a3118ebd990c3506ddd1a77be6962faf in about 5-6 seconds.
 
 The user can try giving a shorter prefix such as 'abc' or 'ab' or 'a' to try out
 how long it takes for a GPU or CPU cluster using OpenCL to reverse the MD5 sum.
+
+The user can then massively parallelize by running multiple instances of
+wisecrackmd5 with different prefixes of say 1 character each on a large cluster
+that supports OpenCL and be able to retrieve passwords much faster.
 
 We understand that the software might be deficient in some aspects, but software
 evolves and so will Wisecracker.
