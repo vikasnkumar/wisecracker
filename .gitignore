@@ -3,3 +3,10 @@ CMakeFiles
 Makefile
 cmake_install.cmake
 install_manifest.txt
+tags
+TAGS
+todo
+TODO
+Debug_x86_64
+Release_x86_64
+MinSizeRel_x86_64
