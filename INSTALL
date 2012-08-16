@@ -1,0 +1,39 @@
+WISECRACKER INSTALLATION
+======================
+
+Pre-requisites:
+
+1. CMake: You need to have cmake 2.6 or above installed.
+2. Compilers: gcc is needed along with standard headers.
+3. GNU Make: make is needed to build the code.
+4. OpenCL: You will need to install OpenCL SDK from Intel, NVIDIA, and/or
+AMD.
+
+How to install:
+
+Release build:
+
+$ export OPENCL_ROOT=/path/to/OpenCL/SDK
+$ make RELEASE=1
+$ make test
+$ make install
+
+Debug build:
+
+$ export OPENCL_ROOT=/path/to/OpenCL/SDK
+$ make
+
+By default make will try to install in /usr/local. If you want your custom
+directory then you can do the following:
+
+$ make install PREFIX=/path/to/install
+
+The code is only tested on a 64-bit system. We do not support 32-bit systems yet
+although you can try your luck.
+If you're on a 64-bit system and want to compile for 32-bit, you can do the
+following:
+
+$ make ARCH=i386
+$ make test ARCH=i386
+$ make install ARCH=i386
+
