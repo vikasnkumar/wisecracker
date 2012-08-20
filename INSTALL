@@ -7,19 +7,21 @@ Pre-requisites:
 2. Compilers: gcc is needed along with standard headers.
 3. GNU Make: make is needed to build the code.
 4. OpenCL: You will need to install OpenCL SDK from Intel, NVIDIA, and/or
-AMD.
+AMD. If you're on Mac OS X you can just use Apple's OpenCL framework.
 
 How to install:
 
 Release build:
 
+Optionally export OPENCL_ROOT on the Mac, otherwise it is necessary on Linux.
 $ export OPENCL_ROOT=/path/to/OpenCL/SDK
-$ make RELEASE=1
+$ make release
 $ make test
 $ make install
 
 Debug build:
 
+Optionally export OPENCL_ROOT on the Mac, otherwise it is necessary on Linux.
 $ export OPENCL_ROOT=/path/to/OpenCL/SDK
 $ make
 

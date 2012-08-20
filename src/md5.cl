@@ -60,10 +60,17 @@ typedef struct {
 #define S43 15
 #define S44 21
 
+/* MAC OSX's OpenCL compiler need prototypes pre-defined. */
 void md5_transform_private(MD5_CTX *, const uchar *);
 void md5_transform_local(MD5_CTX *, __local const uchar *);
 void md5_transform_constant(MD5_CTX *, __constant const uchar *);
 void md5_transform_internal(MD5_CTX *, const uint *);
+void md5_init(MD5_CTX *ctx);
+void md5_update_private(MD5_CTX *ctx, const uchar *input, uint inputlen);
+void md5_update_local(MD5_CTX *ctx, __local const uchar *input, uint inputlen);
+void md5_update_constant(MD5_CTX *ctx, __constant const uchar *input,
+							uint inputlen);
+void md5_final(MD5_CTX *ctx, __local uchar *digest);
 
 #define MD5_MEMCPY(OUTPUT,INPUT,LEN) \
 do { \
