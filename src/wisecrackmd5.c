@@ -349,7 +349,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 	}
 	max_possibilities = 8 - inlen;
 	max_possibilities = 1 << (6 * (8 - inlen));
-	WC_INFO("Max possibilities: %lu\n", max_possibilities);
+	WC_INFO("Max possibilities: %lu\n", (unsigned long)max_possibilities);
 	// copy the initial input
 	memset(&input, 0, sizeof(input));
 	for (idx = 0; idx < inlen; ++idx)

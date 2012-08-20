@@ -37,6 +37,8 @@ CTEST=$(shell which ctest)
 PREFIX?=/usr/local
 ARCH=$(shell uname -m)
 OPENCL_ROOT?=/usr
+CC=$(shell which gcc)
+CXX=$(shell which g++)
 
 RELEASE=
 ifeq ($(RELEASE),1)
@@ -80,6 +82,8 @@ install:
 buildwise:
 	@mkdir -p $(BUILD_DIR); \
 	cd $(BUILD_DIR); \
+	export CC=$(CC); \
+	export CXX=$(CXX); \
 	$(CMAKE) $(CMAKEBUILDVAR) .. ; \
 	$(MAKE); \
 	echo "$(BUILD_TYPE) Build complete"
