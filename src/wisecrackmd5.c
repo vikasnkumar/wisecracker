@@ -62,7 +62,7 @@ int wc_arguments_usage(const char *app)
 	printf("\nUsage: %s [OPTIONS]\n", app);
 	printf("\nOPTIONS are as follows:\n");
 	printf("\t-h\t\tThis help message\n");
-	printf("\t-v\t\tVerbose OpenCL compiler logs. Default is quiet.\n");
+	printf("\t-v\t\tVerbose OpenCL compiler logs for NVIDIA only. Default is quiet.\n");
 	printf("\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
 	printf("\t-m <value>\tMaximum devices to use. Default is 1\n");
 	printf("\t-c\t\tUse CPU only if available. Default any.\n");

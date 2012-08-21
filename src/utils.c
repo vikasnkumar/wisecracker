@@ -103,6 +103,9 @@ int wc_util_timeofday(struct timeval *tv)
 }
 #else
 
-#define wc_util_timeofday(A) gettimeofday((A), NULL)
+int wc_util_timeofday(struct timeval *tv)
+{
+	return gettimeofday(tv, NULL);
+}
 
 #endif
