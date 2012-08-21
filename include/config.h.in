@@ -53,7 +53,8 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
             #ifndef __func__
                 #define __func__ __FUNCTION__
             #endif
-        #endif
+	#endif
+	#define _CRT_SECURE_NO_WARNINGS
 #else // not WIN32
     #ifndef APIENTRY
         #define APIENTRY
@@ -126,9 +127,23 @@ EXTERN_C_BEGIN
 #include <sys/time.h>
 #endif
 
+#cmakedefine WC_SYSTIMEB_H
+#ifdef WC_SYSTIMEB_H
+#include <sys/timeb.h>
+#endif
+
 #cmakedefine WC_STDINT_H
 #ifdef WC_STDINT_H
 #include <stdint.h>
+#else
+	#ifdef WIN32
+		#define uint32_t UINT32
+		#define ssize_t SSIZE_T
+		#define uint64_t UINT64
+		#define int64_t INT64
+		#define uint8_t unsigned char
+		#define int8_t char
+	#endif
 #endif
 
 #cmakedefine WC_STDARG_H
@@ -160,6 +175,11 @@ EXTERN_C_BEGIN
 
 // for MD5 verification only
 #cmakedefine WC_OPENSSL_MD5_H
+
+#ifdef WIN32
+	#define snprintf _snprintf
+	#define strdup _strdup
+#endif
 
 EXTERN_C_END
 #endif // __WC_CONFIG_H__

@@ -33,17 +33,19 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * Date: 21st Dec 2011
  * Software: WiseCracker
  */
-#ifndef __WISECRACKER_UTILS_H__
-#define __WISECRACKER_UTILS_H__
+#ifndef __WC_GETOPT_H__
+#define __WC_GETOPT_H__
 
-EXTERN_C_BEGIN
+#include <wisecracker/config.h>
 
-int wc_util_glob_file(const char *filename, unsigned char **outdata,
-						size_t *outlen);
+#ifdef WC_GETOPT_H
+	#include <getopt.h>
+#else
+	EXTERN_C_BEGIN
+		extern char *optarg;
+		extern int optind, opterr;
+		int getopt(int argc, char **argv, char *optstr);
+	EXTERN_C_END
+#endif // WC_GETOPT_H
 
-int wc_util_timeofday(struct timeval *tv);
-
-EXTERN_C_END
-
-#endif //__WISECRACKER_UTILS_H__
-
+#endif // __WC_GETOPT_H__

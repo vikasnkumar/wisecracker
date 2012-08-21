@@ -34,9 +34,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  * Software: WiseCracker
  */
 #include <wisecracker.h>
-#ifdef WC_GETOPT_H
-	#include <getopt.h>
-#endif
+#include <wisecracker/getopt.h>
 #ifdef WC_OPENSSL_MD5_H
 	#include <openssl/md5.h>
 #endif
@@ -236,7 +234,7 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		assert(input_len != NULL);
 		memset(input, 0, ilen);
 		memset(input_len, 0, sizeof(*input_len) * parallelsz);
-		srand(time(NULL));
+		srand((int)time(NULL));
 		// randomly fill the buffers
 		for (jdx = 0; jdx < parallelsz; ++jdx) {
 			uint32_t kdx;
@@ -257,7 +255,7 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		}
 		do {
 			struct timeval tv1, tv2;
-			gettimeofday(&tv1, NULL);
+			wc_util_timeofday(&tv1);
 			kernel = clCreateKernel(dev->program, "md5sum", &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 			input_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY, ilen,
@@ -289,7 +287,7 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 			rc = clEnqueueReadBuffer(dev->cmdq, digest_mem, CL_TRUE, 0,
 					sizeof(cl_uchar16) * parallelsz, digest, 0, NULL, NULL);
 			WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
-			gettimeofday(&tv2, NULL);
+			wc_util_timeofday(&tv2);
 			WC_INFO("Time taken for test run: %lf\n", WC_TIME_TAKEN(tv1, tv2));
 		} while (0);
 		rc |= clFlush(dev->cmdq);
@@ -383,12 +381,12 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 			max_kernel_calls = 1;
 			max_ll_tries = max_possibilities;
 		} else {
-			max_kernel_calls = (max_possibilities / max_ll_tries) +
+			max_kernel_calls = (uint32_t)(max_possibilities / max_ll_tries) +
 				((max_possibilities % max_ll_tries) ? 1 : 0);
 		}
 		WC_INFO("For device[%u] Max tries: %lu Kernel calls: %u\n", idx,
 				max_ll_tries, max_kernel_calls);
-		gettimeofday(&tv1, NULL);
+		wc_util_timeofday(&tv1);
 		// create the kernel program and the buffers
 		kernel = clCreateKernel(dev->program, "md5sumcheck8", &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
@@ -425,7 +423,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 			WC_ERROR_OPENCL_BREAK(clFlush, rc);
 			if (match.s[0] != 0) {
 				int8_t l = 0;
-				gettimeofday(&tv2, NULL);
+				wc_util_timeofday(&tv2);
 				WC_INFO("Found match in %uth kernel call: ", kdx);
 				for (l = 0; l < 8; ++l)
 					WC_NULL("%c", match.s[l]);

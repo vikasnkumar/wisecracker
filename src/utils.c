@@ -88,3 +88,21 @@ int wc_util_glob_file(const char *filename, unsigned char **outdata,
 	WC_FREE(buf);
 	return rc;
 }
+
+#ifndef WC_SYSTIME_H
+int wc_util_timeofday(struct timeval *tv)
+{
+	if (tv) {
+		struct _timeb tb = { 0 };
+		_ftime_s(&tb);
+		tv->tv_sec = (long)tb.time;
+		tv->tv_usec = (long)tb.millitm * 1000;
+		return 0;
+	}
+	return -1;
+}
+#else
+
+#define wc_util_timeofday(A) gettimeofday((A), NULL)
+
+#endif

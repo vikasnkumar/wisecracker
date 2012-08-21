@@ -45,7 +45,12 @@ add_custom_target(md5_cl.h ALL
 add_definitions(-DWC_MD5_CL="${MD5CL}")
 set(CLEAN_FILES md5_cl.h md5_cl.data ${CLEAN_FILES})
 
-add_library(wisecracker STATIC runtime.c utils.c)
+set(UTIL_SRCS utils.c)
+if (NOT WC_GETOPT_H)
+	set(UTIL_SRCS ${UTIL_SRCS} getopt.c)
+endif (NOT WC_GETOPT_H)
+
+add_library(wisecracker STATIC runtime.c ${UTIL_SRCS})
 target_link_libraries(wisecracker ${OPENCL_LIBS})
 
 add_executable(wisecrackmd5 wisecrackmd5.c)

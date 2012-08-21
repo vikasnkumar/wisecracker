@@ -5,37 +5,51 @@ Pre-requisites:
 
 1. CMake: You need to have cmake 2.6 or above installed.
 2. Compilers: gcc is needed along with standard headers.
-3. GNU Make: make is needed to build the code.
+3. GNU Make: make is needed to build the code for Linux and Mac OSX.
 4. OpenCL: You will need to install OpenCL SDK from Intel, NVIDIA, and/or
 AMD. If you're on Mac OS X you can just use Apple's OpenCL framework.
+5. For Windows you will need Visual Studio C++ 64-bit. Any version from 2005
+onwards is supported.
+6. For Windows you will also need OpenSSL-Win64 from
+http://slproweb.com/products/Win32OpenSSL.html
+7. For Windows you will also need the executable xxd.exe which can be gotten by
+installing either Vim or GNU utilities using MSys or Mingw or Cygwin.
 
 How to install:
 
 Release build:
 
-Optionally export OPENCL_ROOT on the Mac, otherwise it is necessary on Linux.
+For Linux:
+
 $ export OPENCL_ROOT=/path/to/OpenCL/SDK
 $ make release
 $ make test
 $ make install
-
-Debug build:
-
-Optionally export OPENCL_ROOT on the Mac, otherwise it is necessary on Linux.
-$ export OPENCL_ROOT=/path/to/OpenCL/SDK
-$ make
 
 By default make will try to install in /usr/local. If you want your custom
 directory then you can do the following:
 
 $ make install PREFIX=/path/to/install
 
-The code is only tested on a 64-bit system. We do not support 32-bit systems yet
-although you can try your luck.
-If you're on a 64-bit system and want to compile for 32-bit, you can do the
-following:
+For Mac OSX
+$ make release
+$ make test
+$ make install
 
-$ make ARCH=i386
-$ make test ARCH=i386
-$ make install ARCH=i386
+By default make will try to install in /usr/local. If you want your custom
+directory then you can do the following:
 
+$ make install PREFIX=/path/to/install
+
+For Windows 64-bit
+$ set OPENCL_ROOT=/path/to/OpenCL/installation
+$ set OPENSSL_ROOT=/path/to/OpenSSL-Win64/installation
+$ set XXD=/path/to/xxd.exe
+$ build_nmake.bat
+$ build_nmake.bat test
+$ build_nmake.bat install
+
+By default the installation on Windows will be done in a directory called
+"wisecracker" which can then be packaged up for distribution if needed.
+
+The code is only tested on a 64-bit system. We do not support 32-bit systems.

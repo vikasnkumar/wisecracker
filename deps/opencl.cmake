@@ -53,13 +53,8 @@ else (APPLE)
 		${OPENCL_ROOT}/common/include
 		${OPENCL_ROOT}/common/inc
 		)
-	if (WIN32)
-		set(OPENCL_LDFLAGS ${OPENCL_ROOT}/lib ${OPENCL_ROOT}/lib/Win32)
-		set(OPENCL_LIBS OpenCL)
-	else (WIN32)
-		set(OPENCL_LDFLAGS ${OPENCL_ROOT}/lib ${OPENCL_ROOT}/common/lib)
-		set(OPENCL_LIBS OpenCL)
-	endif (WIN32)
+	set(OPENCL_LDFLAGS ${OPENCL_ROOT}/lib ${OPENCL_ROOT}/common/lib)
+	set(OPENCL_LIBS OpenCL)
 
 	set(CMAKE_REQUIRED_INCLUDES_SAVE ${CMAKE_REQUIRED_INCLUDES})
 	set(CMAKE_REQUIRED_INCLUDES ${OPENCL_INCLUDES})

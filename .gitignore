@@ -10,3 +10,6 @@ TODO
 Debug_x86_64
 Release_x86_64
 MinSizeRel_x86_64
+Debug_AMD64
+Release_AMD64
+MinSizeRel_AMD64

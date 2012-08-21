@@ -50,7 +50,12 @@ include(CheckFunctionExists)
 
 # Custom includes
 include(deps/osdefaults.cmake)
-include(deps/opencl.cmake)
+if (WIN32)
+	set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
+	include(deps/openclwin.cmake)
+else (WIN32)
+	include(deps/opencl.cmake)
+endif (WIN32)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)

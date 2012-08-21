@@ -481,7 +481,7 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 				WC_ERROR_OPENCL(clReleaseProgram, err);
 		}
 		dev->program = (cl_program)0;
-		gettimeofday(&tv1, NULL);
+		wc_util_timeofday(&tv1);
 		program = clCreateProgramWithSource(dev->context, 1, &src, &len, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateProgramWithSource, rc);
 		dev->program = program;
@@ -496,7 +496,7 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 			if (verbose)
 				wc_runtime_program_buildlog(dev, verbose);
 		}
-		gettimeofday(&tv2, NULL);
+		wc_util_timeofday(&tv2);
 		WC_INFO("Time taken to compile for device(%s) is %lf seconds.\n",
 				dev->pl_name, WC_TIME_TAKEN(tv1, tv2));
 	}

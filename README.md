@@ -9,8 +9,9 @@ distributed computing power such as that provided by OpenCL.
 =============================
 
 Please read the INSTALL file to perform the build.
-The current system is only supported on Linux. Mac OS X and Windows support
-might come later if the software and its users demand it.
+The current system is only supported on Linux, Mac OSX and Windows. However the
+software will work only in 64-bit mode and hence you will need a 64-bit capable
+operating system to compile and run it.
 
 1. WisecrackMD5
 ================
