@@ -61,6 +61,9 @@ typedef struct {
 #define S44 21
 
 /* MAC OSX's OpenCL compiler need prototypes pre-defined. */
+void md5_decode_private_64(uint *outp, const uchar *inp);
+void md5_decode_constant_64(uint *outp, __constant const uchar *inp);
+void md5_decode_local_64(uint *outp, __local const uchar *inp);
 void md5_transform_private(MD5_CTX *, const uchar *);
 void md5_transform_local(MD5_CTX *, __local const uchar *);
 void md5_transform_constant(MD5_CTX *, __constant const uchar *);
@@ -76,13 +79,6 @@ void md5_final(MD5_CTX *ctx, __local uchar *digest);
 do { \
 	for (uint k = 0; k < (LEN); ++k) \
 		(OUTPUT)[k] = (INPUT)[k]; \
-} while (0)
-
-#define MD5_DECODE(OUTPUT,INPUT,LEN) \
-do { \
-	for (uint k = 0, j = 0; j < (LEN); ++k, j += 4) \
-		OUTPUT[k] = ((uint)INPUT[j]) | (((uint)INPUT[j + 1]) << 8) | \
-			(((uint)INPUT[j + 2]) << 16) | (((uint)INPUT[j + 3]) << 24); \
 } while (0)
 
 /* unrolled already by design */
@@ -235,12 +231,35 @@ void md5_final(MD5_CTX *ctx, __local uchar *digest)
 		ctx->buffer[i] = 0;
 }
 
+void md5_decode_local_64(uint *outp, __local const uchar *inp)
+{
+	#pragma unroll 64
+	for (uint k = 0, j = 0; j < 64; ++k, j += 4)
+		outp[k] = ((uint)inp[j]) | (((uint)inp[j + 1]) << 8) |
+			(((uint)inp[j + 2]) << 16) | (((uint)inp[j + 3]) << 24);
+}
+
+void md5_decode_constant_64(uint *outp, __constant const uchar *inp)
+{
+	#pragma unroll 64
+	for (uint k = 0, j = 0; j < 64; ++k, j += 4)
+		outp[k] = ((uint)inp[j]) | (((uint)inp[j + 1]) << 8) |
+			(((uint)inp[j + 2]) << 16) | (((uint)inp[j + 3]) << 24);
+}
+
+void md5_decode_private_64(uint *outp, const uchar *inp)
+{
+	#pragma unroll 64
+	for (uint k = 0, j = 0; j < 64; ++k, j += 4)
+		outp[k] = ((uint)inp[j]) | (((uint)inp[j + 1]) << 8) |
+			(((uint)inp[j + 2]) << 16) | (((uint)inp[j + 3]) << 24);
+}
+
 void md5_transform_local(MD5_CTX *ctx, __local const uchar *block)
 {
 	uint x[16];
 
-	#pragma unroll 64
-	MD5_DECODE(x, block, 64);
+	md5_decode_local_64(x, block);
 
 	md5_transform_internal(ctx, x);
 	/* zeroize sensitive info */
@@ -253,8 +272,7 @@ void md5_transform_constant(MD5_CTX *ctx, __constant const uchar *block)
 {
 	uint x[16];
 
-	#pragma unroll 64
-	MD5_DECODE(x, block, 64);
+	md5_decode_constant_64(x, block);
 
 	md5_transform_internal(ctx, x);
 
@@ -268,8 +286,7 @@ void md5_transform_private(MD5_CTX *ctx, const uchar *block)
 {
 	uint x[16];
 
-	#pragma unroll 64
-	MD5_DECODE(x, block, 64);
+	md5_decode_private_64(x, block);
 	
 	md5_transform_internal(ctx, x);
 
