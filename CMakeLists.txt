@@ -49,9 +49,9 @@ include(CheckTypeSize)
 include(CheckFunctionExists)
 
 # Custom includes
+set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
 include(deps/osdefaults.cmake)
 if (WIN32)
-	set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
 	include(deps/openclwin.cmake)
 else (WIN32)
 	include(deps/opencl.cmake)
