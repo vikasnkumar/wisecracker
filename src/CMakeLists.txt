@@ -50,12 +50,18 @@ if (NOT WC_GETOPT_H)
 	set(UTIL_SRCS ${UTIL_SRCS} getopt.c)
 endif (NOT WC_GETOPT_H)
 
-add_library(wisecracker STATIC runtime.c ${UTIL_SRCS})
+add_library(wisecracker_s STATIC runtime.c ${UTIL_SRCS})
+target_link_libraries(wisecracker_s ${OPENCL_LIBS})
+add_library(wisecracker SHARED runtime.c ${UTIL_SRCS})
 target_link_libraries(wisecracker ${OPENCL_LIBS})
+set_target_properties(wisecracker PROPERTIES DEFINE_SYMBOL "WC_COMPILING_DLL")
+install(TARGETS wisecracker_s ARCHIVE DESTINATION lib)
+install(TARGETS wisecracker RUNTIME DESTINATION bin LIBRARY DESTINATION lib
+	ARCHIVE DESTINATION lib)
 
 add_executable(wisecrackmd5 wisecrackmd5.c)
 add_dependencies(wisecrackmd5 md5_cl.h)
-target_link_libraries(wisecrackmd5 wisecracker ${OPENSSL_LIBRARIES})
+target_link_libraries(wisecrackmd5 wisecracker_s ${OPENSSL_LIBRARIES})
 install(TARGETS wisecrackmd5 RUNTIME DESTINATION bin)
 
 set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES

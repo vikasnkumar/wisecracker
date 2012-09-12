@@ -74,16 +74,16 @@ typedef struct {
 /* the flag can take values WC_DEVICE_CPU, WC_DEVICE_GPU or WC_DEVICE_ANY
  * Any other value is interpreted as WC_DEVICE_ANY.
  */
-wc_runtime_t *wc_runtime_create(uint32_t devicetype, uint32_t max_devices);
+WCDLL wc_runtime_t *wc_runtime_create(uint32_t devicetype, uint32_t max_devices);
 
-void wc_runtime_destroy(wc_runtime_t *wc);
+WCDLL void wc_runtime_destroy(wc_runtime_t *wc);
 
-void wc_runtime_dump(const wc_runtime_t *wc);
+WCDLL void wc_runtime_dump(const wc_runtime_t *wc);
 
-int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
+WCDLL int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 							const char *buildopts, int verbose);
 
-uint8_t wc_runtime_is_usable(const wc_runtime_t *wc);
+WCDLL uint8_t wc_runtime_is_usable(const wc_runtime_t *wc);
 	
 EXTERN_C_END
 

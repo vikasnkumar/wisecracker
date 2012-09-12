@@ -36,3 +36,8 @@ configure_file(config.h.in ${CMAKE_CURRENT_BINARY_DIR}/wisecracker/config.h @ONL
 set(CLEAN_FILES md5_cl.h md5_cl.data ${CLEAN_FILES})
 set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES
 	"${CLEAN_FILES}")
+install(DIRECTORY wisecracker/ DESTINATION include/wisecracker FILES_MATCHING
+	PATTERN "*.h")
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/wisecracker/config.h DESTINATION
+	include/wisecracker)
+install(FILES wisecracker.h DESTINATION include)

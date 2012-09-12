@@ -47,7 +47,11 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifdef WIN32
     #if _MSC_VER >= 1300
         #ifndef WCDLL
-            #define WCDLL __declspec(dllexport)
+			#ifdef WC_COMPILING_DLL
+	            #define WCDLL __declspec(dllexport)
+			#else
+				#define WCDLL
+			#endif
         #endif
             // Microsoft uses __FUNCTION__ instead of __func__
             #ifndef __func__
