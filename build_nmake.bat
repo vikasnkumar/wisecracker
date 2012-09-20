@@ -1,38 +1,25 @@
 @echo off
+REM Wisecracker: A cryptanalysis framework
 REM Copyright (c) 2011-2012, Vikas Naresh Kumar, Selective Intellect LLC
-REM All rights reserved.
-REM 
-REM Redistribution and use in source and binary forms, with or without
-REM modification, are permitted provided that the following conditions are met:
-REM 
-REM     * Redistributions of source code must retain the above copyright
-REM       notice, this list of conditions and the following disclaimer.
-REM 
-REM     * Redistributions in binary form must reproduce the above copyright
-REM       notice, this list of conditions and the following disclaimer in the
-REM       documentation and/or other materials provided with the distribution.
-REM 
-REM     * Neither the name of Selective Intellect LLC nor the
-REM       names of its contributors may be used to endorse or promote products
-REM       derived from this software without specific prior written permission.
-REM 
-REM THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
-REM ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
-REM WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-REM DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
-REM DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
-REM (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-REM LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
-REM ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-REM (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
-REM SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-REM 
-REM ##############################################################
+REM    
+REM This program is free software: you can redistribute it and/or modify
+REM it under the terms of the GNU General Public License as published by
+REM the Free Software Foundation, either version 3 of the License, or
+REM any later version.
+REM
+REM This program is distributed in the hope that it will be useful,
+REM but WITHOUT ANY WARRANTY; without even the implied warranty of
+REM MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+REM GNU General Public License for more details.
+REM
+REM You should have received a copy of the GNU General Public License
+REM along with this program.  If not, see <http://www.gnu.org/licenses/>.
+REM ######################################################################
 REM COPYRIGHT: 2011-2012 Selective Intellect LLC. All Rights Reserved
 REM AUTHOR: Vikas Kumar
 REM DATE: 21st Dec 2011
 REM SOFTWARE: Wisecracker 
-REM ##############################################################
+REM ######################################################################
 
 if /i "%1" == "/?" goto :help
 if /i "%1" == "/h" goto :help
