@@ -3,7 +3,9 @@ Wisecracker
 
 Wisecracker is a collection of simple cryptanalysis tools. The aim is to expand
 this software into a larger code base for performing easy cryptanalysis using
-distributed computing power such as that provided by OpenCL.
+distributed computing power such as that provided by OpenCL. It is licensed
+under the GPLv3. If you want to license it under another license, please contact
+the developers at Selective Intellect LLC at <github@selectiveintellect.com>.
 
 0. How to build the software
 =============================
