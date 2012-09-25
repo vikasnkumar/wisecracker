@@ -43,16 +43,6 @@ struct wc_arguments {
 	char *prefix;
 };
 
-void wc_arguments_license()
-{
-	const char license[] = 
-    "Wisecracker:  Copyright (C) 2011-2012. Vikas N Kumar, Selective Intellect"\
-	" LLC.\nThis program comes with ABSOLUTELY NO WARRANTY.\n"\
-	"This is free software, and you are welcome to redistribute it "\
-	"under certain conditions.\nRead the GPLv3 license provided with the "\
-	"source code for more details.\n";
-	fprintf(stderr, "%s\n", license);
-}
 int wc_arguments_usage(const char *app)
 {
 	printf("\nUsage: %s [OPTIONS]\n", app);
@@ -294,7 +284,7 @@ int main(int argc, char **argv)
 	uint8_t alloced = 0;
 	struct wc_arguments args;
 
-	wc_arguments_license();
+	WC_NULL("%s\n", wc_util_license());
 	memset(&args, 0, sizeof(args));
 	if (wc_arguments_parse(argc, argv, &args) < 0) {
 		WC_ERROR("Unable to parse arguments.\n");
