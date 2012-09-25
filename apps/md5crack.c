@@ -62,8 +62,6 @@ int wc_arguments_usage(const char *app)
 	printf("\t-m <value>\tMaximum devices to use. Default is 1\n");
 	printf("\t-c\t\tUse CPU only if available. Default any.\n");
 	printf("\t-g\t\tUse GPU only if available. Default any.\n");
-	printf("\t-w <value>\tMaximum items for parallel execution for test run. "
-			"Default 16\n");
 	printf("\t-M <md5sum>\tMD5sum of an 8-char string in [A-Za-z0-9_$]\n");
 	printf("\t-p <prefix>\tPrefix of the 8-char string whose MD5 sum we "
 			"have. Needs the -M option as well.\n");
@@ -126,11 +124,9 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 			break;
 		}
 	}
-	if ((args->prefix && !args->md5sum) ||
-		(args->md5sum && !args->prefix) ||
-		(!args->md5sum && !args->prefix)) {
+	if (!args->md5sum) {
 		WC_NULL("\n");
-		WC_ERROR("You need both the prefix and the MD5 sum.\n");
+		WC_ERROR("You need to provide an MD5 sum to crack.\n");
 		wc_arguments_usage(argv[0]);
 		rc = -1;
 	}
@@ -148,7 +144,7 @@ void wc_arguments_dump(const struct wc_arguments *args)
 		if (args->device_flag == WC_DEVICE_GPU)
 			WC_INFO("GPU only\n");
 		if (args->md5sum)
-			WC_INFO("Will check for MD5 sum: %s\n", args->md5sum);
+			WC_INFO("Will try to crack MD5 sum: %s\n", args->md5sum);
 		if (args->prefix)
 			WC_INFO("Will use prefix: %s\n", args->prefix);
 	}
