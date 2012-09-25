@@ -69,7 +69,7 @@ WCDLL void wc_runtime_destroy(wc_runtime_t *wc);
 WCDLL void wc_runtime_dump(const wc_runtime_t *wc);
 
 WCDLL int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
-							const char *buildopts, int verbose);
+							const char *buildopts);
 
 WCDLL uint8_t wc_runtime_is_usable(const wc_runtime_t *wc);
 	

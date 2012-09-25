@@ -38,9 +38,7 @@ static const size_t wc_md5_cl_codelen = sizeof(wc_md5_cl_code);
 struct wc_arguments {
 	char *cl_filename;
 	uint32_t max_devices;
-	int verbose;
 	int device_flag;
-	uint32_t workitems;
 	char *md5sum;
 	char *prefix;
 };
@@ -60,7 +58,6 @@ int wc_arguments_usage(const char *app)
 	printf("\nUsage: %s [OPTIONS]\n", app);
 	printf("\nOPTIONS are as follows:\n");
 	printf("\t-h\t\tThis help message\n");
-	printf("\t-v\t\tVerbose OpenCL compiler logs for NVIDIA only. Default is quiet.\n");
 	printf("\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
 	printf("\t-m <value>\tMaximum devices to use. Default is 1\n");
 	printf("\t-c\t\tUse CPU only if available. Default any.\n");
@@ -82,13 +79,11 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 		return -1;
 	args->cl_filename = NULL;
 	args->max_devices = 1;
-	args->verbose = 0;
 	args->device_flag = WC_DEVICE_ANY;
-	args->workitems = 16;
 	args->md5sum = NULL;
 	args->prefix = NULL;
 
-	while ((opt = getopt(argc, argv, "hvgcm:f:w:M:p:")) != -1) {
+	while ((opt = getopt(argc, argv, "hgcm:f:M:p:")) != -1) {
 		switch (opt) {
 		case 'f':
 			args->cl_filename = strdup(optarg);
@@ -100,17 +95,11 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 		case 'm':
 			args->max_devices = (uint32_t)strtol(optarg, NULL, 10);
 			break;
-		case 'v':
-			args->verbose = 1;
-			break;
 		case 'c':
 			args->device_flag = WC_DEVICE_CPU;
 			break;
 		case 'g':
 			args->device_flag = WC_DEVICE_GPU;
-			break;
-		case 'w':
-			args->workitems = (uint32_t)strtol(optarg, NULL, 10);
 			break;
 		case 'M':
 			/* each byte is represented as 2 characters */
@@ -137,9 +126,9 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 			break;
 		}
 	}
-	if (args->workitems < 1)
-		args->workitems = 16;
-	if ((args->prefix && !args->md5sum) || (args->md5sum && !args->prefix)) {
+	if ((args->prefix && !args->md5sum) ||
+		(args->md5sum && !args->prefix) ||
+		(!args->md5sum && !args->prefix)) {
 		WC_NULL("\n");
 		WC_ERROR("You need both the prefix and the MD5 sum.\n");
 		wc_arguments_usage(argv[0]);
@@ -154,12 +143,10 @@ void wc_arguments_dump(const struct wc_arguments *args)
 		if (args->cl_filename)
 			WC_INFO("OpenCL source code file: %s\n", args->cl_filename);
 		WC_INFO("Max Devices to use: %u\n", args->max_devices);
-		WC_INFO("Verbose OpenCL compiler logs: %s\n", args->verbose ? "yes" : "no");
 		if (args->device_flag == WC_DEVICE_CPU)
 			WC_INFO("CPU only\n");
 		if (args->device_flag == WC_DEVICE_GPU)
 			WC_INFO("GPU only\n");
-		WC_INFO("Max Parallel Items: %u\n", args->workitems);
 		if (args->md5sum)
 			WC_INFO("Will check for MD5 sum: %s\n", args->md5sum);
 		if (args->prefix)
@@ -174,145 +161,6 @@ void wc_arguments_cleanup(struct wc_arguments *args)
 		WC_FREE(args->md5sum);
 		WC_FREE(args->prefix);
 	}
-}
-
-int wc_md5_compare(const cl_uchar *d1, const cl_uchar16 *d2)
-{
-	int fail = 1;
-	if (d1 && d2) {
-		int i = 0;
-		fail = 0;
-		for (i = 0; i < 16; ++i) {
-			if (d1[i] != d2->s[i]) {
-				fail = 1;
-				break;
-			}
-		}
-		if (fail) {
-			WC_INFO("Expected: ");
-			for (i = 0; i < 16; ++i)
-				WC_NULL("%02x", d1[i]);
-			WC_NULL("\n");
-			WC_INFO("Calculated: ");
-			for (i = 0; i < 16; ++i)
-				WC_NULL("%02x", d2->s[i]);
-			WC_NULL("\n");
-		}
-	}
-	return fail;
-}
-
-int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
-{
-	cl_int rc = CL_SUCCESS;
-	const cl_uint maxblocksz = 512;
-	const cl_uint workdim = 1;
-	size_t local_work_size = 1;
-	size_t global_work_size = parallelsz;
-	uint32_t idx;
-	if (!wc_runtime_is_usable(wc))
-		return -1;
-	for (idx = 0; idx < wc->device_index; ++idx) {
-		cl_mem input_mem = (cl_mem)0;
-		cl_mem inputlen_mem = (cl_mem)0;
-		cl_mem digest_mem = (cl_mem)0;
-		cl_uchar *input = NULL;
-		cl_uint *input_len = NULL;
-		cl_uchar16 *digest = NULL;
-		cl_kernel kernel = (cl_kernel)0;
-		uint32_t jdx, argc;
-		cl_uint l_bufsz = 0;
-		cl_uint ilen = 0;
-		wc_device_t *dev = &wc->devices[idx];
-
-		ilen = maxblocksz * parallelsz;
-		input = WC_MALLOC(ilen);
-		assert(input != NULL);
-		input_len = WC_MALLOC(sizeof(*input_len) * parallelsz);
-		assert(input_len != NULL);
-		memset(input, 0, ilen);
-		memset(input_len, 0, sizeof(*input_len) * parallelsz);
-		srand((int)time(NULL));
-		// randomly fill the buffers
-		for (jdx = 0; jdx < parallelsz; ++jdx) {
-			uint32_t kdx;
-			input_len[jdx] = maxblocksz;
-			for (kdx = 0; kdx < input_len[jdx]; ++kdx) {
-				input[kdx + jdx * maxblocksz] = (cl_uchar)(rand() & 0xFF);
-			}
-		}
-		digest = WC_MALLOC(sizeof(cl_uchar16) * parallelsz);
-		assert(digest != NULL);
-		memset(digest, 0, sizeof(cl_uchar16) * parallelsz);
-		l_bufsz = ilen;
-		if (l_bufsz >= dev->localmem_sz) {
-			WC_INFO("Size of local buffer: %u\n", l_bufsz);
-			WC_ERROR("Local buffer max limit reached.\n");
-			rc = -1;
-			break;
-		}
-		do {
-			struct timeval tv1, tv2;
-			wc_util_timeofday(&tv1);
-			kernel = clCreateKernel(dev->program, "md5sum", &rc);
-			WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
-			input_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY, ilen,
-										NULL, &rc);
-			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-			inputlen_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
-					sizeof(cl_uint) * parallelsz, NULL, &rc);
-			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-			digest_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
-									sizeof(cl_uchar16) * parallelsz, NULL, &rc);
-			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-			argc = 0;
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &input_mem);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &inputlen_mem);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &digest_mem);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &parallelsz);
-			rc |= clSetKernelArg(kernel, argc++, l_bufsz, NULL);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &l_bufsz);
-			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
-			rc = clEnqueueWriteBuffer(dev->cmdq, input_mem, CL_FALSE, 0, ilen,
-					input, 0, NULL, NULL);
-			WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
-			rc = clEnqueueWriteBuffer(dev->cmdq, inputlen_mem, CL_FALSE, 0,
-					sizeof(cl_uint) * parallelsz, input_len, 0, NULL, NULL);
-			WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
-			rc = clEnqueueNDRangeKernel(dev->cmdq, kernel, workdim, NULL,
-					&global_work_size, &local_work_size, 0, NULL, NULL);
-			WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
-			rc = clEnqueueReadBuffer(dev->cmdq, digest_mem, CL_TRUE, 0,
-					sizeof(cl_uchar16) * parallelsz, digest, 0, NULL, NULL);
-			WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
-			wc_util_timeofday(&tv2);
-			WC_INFO("Time taken for test run: %lf\n", WC_TIME_TAKEN(tv1, tv2));
-		} while (0);
-		rc |= clFlush(dev->cmdq);
-		if (kernel)
-			rc |= clReleaseKernel(kernel);
-		if (input_mem)
-			rc |= clReleaseMemObject(input_mem);
-		if (inputlen_mem)
-			rc |= clReleaseMemObject(inputlen_mem);
-		if (digest_mem)
-			rc |= clReleaseMemObject(digest_mem);
-		if (rc == CL_SUCCESS) {
-			for (jdx = 0; jdx < parallelsz; ++jdx) {
-				cl_uchar md[MD5_DIGEST_LENGTH];
-				memset(md, 0, sizeof(md));
-				MD5(&input[jdx * maxblocksz], input_len[jdx], md);
-				if (wc_md5_compare(md, &digest[jdx])) {
-					break;	
-				}
-			}
-		}
-		WC_FREE(input);
-		WC_FREE(input_len);
-		WC_FREE(digest);
-	}
-
-	return (rc == CL_SUCCESS) ? 0 : -1;
 }
 
 static const unsigned char wc_md5_decoder[0x80] = {
@@ -479,30 +327,17 @@ int main(int argc, char **argv)
 	assert(wc != NULL);
 	wc_runtime_dump(wc);
 	
-	rc = wc_runtime_program_load(wc, (const char *)code, codelen, NULL,
-								args.verbose);
+	rc = wc_runtime_program_load(wc, (const char *)code, codelen, NULL);
 	if (rc < 0)
 		WC_ERROR("Unable to compile the source code from %s\n",
 				args.cl_filename ? args.cl_filename : WC_MD5_CL);
 
-	do {
-		rc = wc_md5_testrun(wc, args.workitems);
-		if (rc < 0) {
-			WC_ERROR("Unable to execute the MD5 code.\n");
-			break;
-		}
-		WC_INFO("Test run sucessful.\n");
-		if (args.md5sum && args.prefix) {
-			rc = wc_md5_finder(wc, args.md5sum, args.prefix);
-			if (rc < 0) {
-				WC_ERROR("Unable to verify MD5 sums.\n");
-				break;
-			}
-		}
-	} while (0);
+	rc = wc_md5_finder(wc, args.md5sum, args.prefix);
+	if (rc < 0)
+		WC_ERROR("Unable to verify MD5 sums.\n");
 	wc_runtime_destroy(wc);
 	if (alloced)
 		WC_FREE(code);
 	wc_arguments_cleanup(&args);
-	return 0;
+	return rc;
 }

@@ -44,7 +44,7 @@ pushd %CURDIR%
 
 REM force OPENCL_ROOT and OPENSSL_ROOT_DIR setup
 if "%OPENCL_ROOT%" == "" goto :openclerr
-if "%OPENSSL_ROOT_DIR%" == "" goto :opensslerr
+if "%OPENSSL_ROOT_DIR%" == "" set SSLOPT=OFF
 if "%XXD%" == "" goto :xxderr
 
 if not "%VS80COMNTOOLS%" == "" goto :vs80
@@ -83,7 +83,7 @@ set NMFLAG=
 if not exist CMakeCache.txt set NMFLAG=/A
 @echo "NMake Flag is %NMFLAG%"
 
-cmake -G"NMake Makefiles" -DCMAKE_INSTALL_PREFIX=wisecracker -DCMAKE_BUILD_TYPE="%BUILD_TYPE%" ..\ || goto :cmakeerr
+cmake -G"NMake Makefiles" -DCMAKE_INSTALL_PREFIX=wisecracker -DCMAKE_BUILD_TYPE="%BUILD_TYPE%" -DUSE_OPENSSL=%SSLOPT% ..\ || goto :cmakeerr
 nmake %NMFLAG% || goto :nmakeerr
 
 REM check build target
@@ -134,6 +134,9 @@ goto :end
 
 :help
 @echo "Usage: %0 [/?|/h] [Debug|Release] [test|install|rebuild|all]"
+@echo "You should set the OPENCL_ROOT environment variable to point to an OPENCL installation"
+@echo "You will need to set the XXD environment variable to point to the xxd.exe program. Read the INSTALL file for more details"
+@echo "You can optionally set OPENSSL_ROOT environment variable to point to an OPENSSL install"
 goto :end
 
 :end

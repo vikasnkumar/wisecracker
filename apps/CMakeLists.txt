@@ -32,12 +32,15 @@ set(CLEAN_FILES md5_cl.h md5_cl.data ${CLEAN_FILES})
 
 add_executable(wisecrackmd5 md5crack.c)
 add_dependencies(wisecrackmd5 md5_cl.h)
-target_link_libraries(wisecrackmd5 wisecracker_s ${OPENSSL_LIBRARIES})
+target_link_libraries(wisecrackmd5 wisecracker_s)
 install(TARGETS wisecrackmd5 RUNTIME DESTINATION bin)
+
+if (USE_OPENSSL)
+	add_executable(wctestmd5 md5test.c)
+	add_dependencies(wctestmd5 md5_cl.h)
+	target_link_libraries(wctestmd5 wisecracker_s ${OPENSSL_LIBRARIES})
+	install(TARGETS wctestmd5 RUNTIME DESTINATION bin)
+endif (USE_OPENSSL)
 
 set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES
 	"${CLEAN_FILES}")
-
-#add_executable(testmd5 testmd5.c)
-#target_link_libraries(testmd5 crypto ${OPENCL_LIBS})
-

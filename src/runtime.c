@@ -376,7 +376,7 @@ do { \
 #undef LOCAL_PRINT_UNITS
 }
 
-static void wc_runtime_program_buildlog(wc_device_t *dev, int verbose)
+static void wc_runtime_program_buildlog(wc_device_t *dev)
 {
 	if (dev) {
 		cl_int rc = CL_SUCCESS;
@@ -400,21 +400,14 @@ static void wc_runtime_program_buildlog(wc_device_t *dev, int verbose)
 		if (rc != CL_SUCCESS) {
 			WC_ERROR_OPENCL(clGetProgramBuildInfo, rc);
 		} else {
-			if (!verbose) {
-				if (logsz <= 4) //'\r\n\r\n'
-					WC_INFO("Successfully compiled.\n");
-				else
-					WC_INFO("OpenCL Compiler errors:\n%s\n", logmsg);
-			} else {
-				WC_INFO("OpenCL Compiler output:\n%s\n", logmsg);
-			}
+			WC_DEBUG("OpenCL Compiler output:\n%s\n", logmsg);
 		}
 		WC_FREE(logmsg);
 	}
 }
 
 int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
-							const char *buildopts, int verbose)
+							const char *buildopts)
 {
 	cl_int rc = CL_SUCCESS;
 	char *build_options = NULL;
@@ -427,35 +420,23 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 	}
 	if (buildopts) {
 		size_t olen = strlen(buildopts) + strlen(WC_OPENCL_OPTS) + 64;
-		if (verbose)
-			olen += strlen(WC_OPENCL_VERBOSE);
 		build_options = WC_MALLOC(olen);
 		if (!build_options) {
 			WC_ERROR_OUTOFMEMORY(olen);
 			return -1;
 		} else {
 			memset(build_options, 0, olen);
-			if (!verbose)
-				snprintf(build_options, olen, "%s %s", buildopts, WC_OPENCL_OPTS);
-			else
-				snprintf(build_options, olen, "%s %s %s", buildopts,
-						WC_OPENCL_OPTS, WC_OPENCL_VERBOSE);
+			snprintf(build_options, olen, "%s %s", buildopts, WC_OPENCL_OPTS);
 		}
 	} else {
 		size_t olen = strlen(WC_OPENCL_OPTS) + 64;
-		if (verbose)
-			olen += strlen(WC_OPENCL_VERBOSE);
 		build_options = WC_MALLOC(olen);
 		if (!build_options) {
 			WC_ERROR_OUTOFMEMORY(olen);
 			return -1;
 		} else {
 			memset(build_options, 0, olen);
-			if (!verbose)
-				snprintf(build_options, olen, "%s", WC_OPENCL_OPTS);
-			else
-				snprintf(build_options, olen, "%s %s", WC_OPENCL_OPTS,
-						WC_OPENCL_VERBOSE);
+			snprintf(build_options, olen, "%s", WC_OPENCL_OPTS);
 		}
 	}
 	WC_INFO("Using build options: %s\n", build_options);
@@ -476,13 +457,12 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 		rc = clBuildProgram(dev->program, 1, &dev->id, build_options,
 							NULL, NULL);
 		if (rc != CL_SUCCESS) {
-			wc_runtime_program_buildlog(dev, 0);
+			wc_runtime_program_buildlog(dev);
 			clReleaseProgram(dev->program);
 			dev->program = (cl_program)0;
 			WC_ERROR_OPENCL_BREAK(clBuildProgram, rc);
 		} else {
-			if (verbose)
-				wc_runtime_program_buildlog(dev, verbose);
+			wc_runtime_program_buildlog(dev);
 		}
 		wc_util_timeofday(&tv2);
 		WC_INFO("Time taken to compile for device(%s) is %lf seconds.\n",

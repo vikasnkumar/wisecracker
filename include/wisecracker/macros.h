@@ -25,6 +25,11 @@
 #define __WISECRACKER_MACROS_H__
 
 #define WC_NULL(...) fprintf(stderr, __VA_ARGS__)
+#define WC_DEBUG(...) \
+do { \
+	fprintf(stderr, "[%s:%d] DEBUG: ", __func__, __LINE__); \
+	fprintf(stderr, __VA_ARGS__); \
+} while (0)
 #define WC_INFO(...) \
 do { \
 	fprintf(stderr, "[%s:%d] INFO: ", __func__, __LINE__); \
@@ -63,7 +68,6 @@ do { \
 } while (0)
 
 #define WC_OPENCL_OPTS "-Werror -I."
-#define WC_OPENCL_VERBOSE "-cl-nv-verbose"
 
 #define WC_TIME_TAKEN(TV1,TV2) \
 	(double)(((TV2).tv_sec - (TV1).tv_sec) + (double)((TV2).tv_usec - (TV1).tv_usec) / 1000000)

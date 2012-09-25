@@ -96,4 +96,15 @@ int wc_util_timeofday(struct timeval *tv)
 	return gettimeofday(tv, NULL);
 }
 
+const char *wc_util_license()
+{
+	static const char __wc_util_license[] = 
+    "Wisecracker:  Copyright (C) 2011-2012. Vikas N Kumar, Selective Intellect"\
+	" LLC.\nThis program comes with ABSOLUTELY NO WARRANTY.\n"\
+	"This is free software, and you are welcome to redistribute it "\
+	"under certain conditions.\nRead the GPLv3 license provided with the "\
+	"source code for more details.\n";
+	return __wc_util_license;
+}
+
 #endif

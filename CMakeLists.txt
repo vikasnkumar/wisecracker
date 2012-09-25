@@ -34,6 +34,7 @@ include(CheckIncludeFiles)
 include(CheckLibraryExists)
 include(CheckTypeSize)
 include(CheckFunctionExists)
+option(USE_OPENSSL "Use OpenSSL" ON)
 
 # Custom includes
 set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
