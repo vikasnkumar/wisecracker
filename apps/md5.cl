@@ -399,6 +399,41 @@ __kernel void md5sum(__global uchar *input, /* complete set of buffer blocks */
 	digest[index] = vload16(0, out);
 }
 
+__constant uchar CHARSET_ALNUMSPL[94] = {
+	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
+	'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
+	'Y', 'Z', 'a', 'b', 'c', 'd', 'e', 'f',
+	'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n',
+	'o', 'p', 'q', 'r', 's', 't', 'u', 'v',
+	'w', 'x', 'y', 'z', '0', '1', '2', '3',
+	'4', '5', '6', '7', '8', '9', '~', '!',
+	'@', '#', '$', '%', '^', '&', '*', '(',
+	')', '_', '-', '+', '=', '/', '|', '\\',
+	'?', '<', '>', '.', ',', ';', ':', '`',
+	'"', 0x27, '[', ']', '{', '}' // 0x27 is the single quote '
+};
+
+// this is taken from include/wisecracker/utils.h
+// if that enum changes this should change accordingly
+#define WC_UTIL_CHARSET_ALPHA 0
+#define WC_UTIL_CHARSET_DIGIT 1
+#define WC_UTIL_CHARSET_ALNUM 2
+#define WC_UTIL_CHARSET_SPECIAL 3
+#define	WC_UTIL_CHARSET_ALNUMSPL 4
+
+__kernel void md5sumcheck16(uchar16 input, // the starting portion of the string
+					uchar16 digest, // the MD5 digest to compare
+					__global uchar16 *matches, // the final string that matches
+					ushort nchars, // the maximum size of the allowed string
+					ushort charset, // the type of charset as defined above
+					ulong index) // the index for computing the string to use
+{
+
+	if (charset > WC_UTIL_CHARSET_ALNUMSPL)
+		charset = WC_UTIL_CHARSET_ALNUMSPL;
+}
+
 __constant uchar CHARACTERS[64] = {
 	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
 	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
