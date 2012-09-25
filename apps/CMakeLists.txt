@@ -14,39 +14,30 @@
 ### You should have received a copy of the GNU General Public License
 ### along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #########################################################################
-### COPYRIGHT: 2011-2012 Selective Intellect LLC. All Rights Reserved
+### COPYRIGHT: Selective Intellect LLC
 ### AUTHOR: Vikas Kumar
-### DATE: 21st Dec 2011
-### SOFTWARE: Wisecracker 
+### DATE: 25th August 2011
 #########################################################################
-cmake_minimum_required(VERSION 2.6)
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
+include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-#CMake default includes
-include(CTest)
-enable_testing()
-if (CMAKE_MINOR_VERSION GREATER 6)
-	cmake_policy(SET CMP0008 OLD)
-endif (CMAKE_MINOR_VERSION GREATER 6)
+# use XXD to convert the default OpenCL files into headers
+set(MD5CL md5.cl)
+add_custom_target(md5_cl.h ALL
+	${XXD} -i < ${CMAKE_CURRENT_SOURCE_DIR}/${MD5CL} > md5_cl.data
+	COMMAND ${CMAKE_COMMAND} -E copy_if_different md5_cl.data md5_cl.h
+	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} VERBATIM)
+add_definitions(-DWC_MD5_CL="${MD5CL}")
+set(CLEAN_FILES md5_cl.h md5_cl.data ${CLEAN_FILES})
 
-include(CheckIncludeFile)
-include(CheckIncludeFileCXX)
-include(CheckIncludeFiles)
-include(CheckLibraryExists)
-include(CheckTypeSize)
-include(CheckFunctionExists)
+add_executable(wisecrackmd5 md5crack.c)
+add_dependencies(wisecrackmd5 md5_cl.h)
+target_link_libraries(wisecrackmd5 wisecracker_s ${OPENSSL_LIBRARIES})
+install(TARGETS wisecrackmd5 RUNTIME DESTINATION bin)
 
-# Custom includes
-set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
-include(deps/osdefaults.cmake)
-if (WIN32)
-	include(deps/openclwin.cmake)
-else (WIN32)
-	include(deps/opencl.cmake)
-endif (WIN32)
+set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES
+	"${CLEAN_FILES}")
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
-include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
+#add_executable(testmd5 testmd5.c)
+#target_link_libraries(testmd5 crypto ${OPENCL_LIBS})
 
-add_subdirectory(include)
-add_subdirectory(src)
-add_subdirectory(apps)

@@ -74,7 +74,7 @@ buildwise:
 	$(CMAKE) $(CMAKEBUILDVAR) .. ; \
 	$(MAKE); \
 	echo "$(BUILD_TYPE) Build complete"
-.PHONY: wise
+.PHONY: buildwise
 
 cmakeclean: clean
 	@if test -d $(BUILD_DIR); then \

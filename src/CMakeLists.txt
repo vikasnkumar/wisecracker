@@ -23,15 +23,6 @@ project(wisecracker C)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
 
-# use XXD to convert the default OpenCL files into headers
-set(MD5CL md5.cl)
-add_custom_target(md5_cl.h ALL
-	${XXD} -i < ${CMAKE_CURRENT_SOURCE_DIR}/${MD5CL} > md5_cl.data
-	COMMAND ${CMAKE_COMMAND} -E copy_if_different md5_cl.data md5_cl.h
-	WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR} VERBATIM)
-add_definitions(-DWC_MD5_CL="${MD5CL}")
-set(CLEAN_FILES md5_cl.h md5_cl.data ${CLEAN_FILES})
-
 set(UTIL_SRCS utils.c)
 if (NOT WC_GETOPT_H)
 	set(UTIL_SRCS ${UTIL_SRCS} getopt.c)
@@ -45,15 +36,3 @@ set_target_properties(wisecracker PROPERTIES DEFINE_SYMBOL "WC_COMPILING_DLL")
 install(TARGETS wisecracker_s ARCHIVE DESTINATION lib)
 install(TARGETS wisecracker RUNTIME DESTINATION bin LIBRARY DESTINATION lib
 	ARCHIVE DESTINATION lib)
-
-add_executable(wisecrackmd5 wisecrackmd5.c)
-add_dependencies(wisecrackmd5 md5_cl.h)
-target_link_libraries(wisecrackmd5 wisecracker_s ${OPENSSL_LIBRARIES})
-install(TARGETS wisecrackmd5 RUNTIME DESTINATION bin)
-
-set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES
-	"${CLEAN_FILES}")
-
-#add_executable(testmd5 testmd5.c)
-#target_link_libraries(testmd5 crypto ${OPENCL_LIBS})
-
