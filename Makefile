@@ -42,7 +42,7 @@ default: all
 all: buildwise
 .PHONY: all
 
-rebuild: clean buildwise
+rebuild: distclean buildwise
 .PHONY: rebuild
 
 release:
