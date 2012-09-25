@@ -26,6 +26,16 @@
 
 EXTERN_C_BEGIN
 
+typedef enum {
+	WC_UTIL_CHARSET_ALPHA,
+	WC_UTIL_CHARSET_DIGIT,
+	WC_UTIL_CHARSET_ALNUM,
+	WC_UTIL_CHARSET_SPECIAL,
+	WC_UTIL_CHARSET_ALNUMSPL
+} wc_util_charset_t;
+/* provide a string name for the charset enum entry */
+const char *wc_util_charset_tostring(wc_util_charset_t chs);
+
 /* load a full file into a character buffer */
 int wc_util_glob_file(const char *filename, unsigned char **outdata,
 						size_t *outlen);

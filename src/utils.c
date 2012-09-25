@@ -107,4 +107,16 @@ const char *wc_util_license()
 	return __wc_util_license;
 }
 
+const char *wc_util_charset_tostring(wc_util_charset_t chs)
+{
+	switch (chs) {
+	case WC_UTIL_CHARSET_ALNUM: return "alnum";
+	case WC_UTIL_CHARSET_ALPHA: return "alpha";
+	case WC_UTIL_CHARSET_DIGIT: return "digit";
+	case WC_UTIL_CHARSET_SPECIAL: return "special";
+	case WC_UTIL_CHARSET_ALNUMSPL: return "alnumspl";
+	default: return "unknown";
+	}
+}
+
 #endif

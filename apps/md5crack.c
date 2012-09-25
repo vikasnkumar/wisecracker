@@ -23,9 +23,7 @@
  */
 #include <wisecracker.h>
 #include <wisecracker/getopt.h>
-#ifdef WC_OPENSSL_MD5_H
-	#include <openssl/md5.h>
-#endif
+
 #ifndef MD5_DIGEST_LENGTH
 	#define MD5_DIGEST_LENGTH 16
 #endif
@@ -39,6 +37,8 @@ struct wc_arguments {
 	char *cl_filename;
 	uint32_t max_devices;
 	int device_flag;
+	wc_util_charset_t charset;
+	uint8_t nchars; // a single byte can have values 0-255
 	char *md5sum;
 	char *prefix;
 };
@@ -47,14 +47,26 @@ int wc_arguments_usage(const char *app)
 {
 	printf("\nUsage: %s [OPTIONS]\n", app);
 	printf("\nOPTIONS are as follows:\n");
-	printf("\t-h\t\tThis help message\n");
-	printf("\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
-	printf("\t-m <value>\tMaximum devices to use. Default is 1\n");
-	printf("\t-c\t\tUse CPU only if available. Default any.\n");
-	printf("\t-g\t\tUse GPU only if available. Default any.\n");
-	printf("\t-M <md5sum>\tMD5sum of an 8-char string in [A-Za-z0-9_$]\n");
-	printf("\t-p <prefix>\tPrefix of the 8-char string whose MD5 sum we "
-			"have. Needs the -M option as well.\n");
+	printf("\n\t-h\t\tThis help message\n");
+	printf("\n\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
+	printf("\n\t-m <value>\tMaximum devices to use. Default is 1\n");
+	printf("\n\t-c\t\tUse CPU only if available. Default any.\n");
+	printf("\n\t-g\t\tUse GPU only if available. Default any.\n");
+	printf("\n\t-N <number>\tLength of string to look for. Default is 8.\n");
+	printf("\n\t-M <md5sum>\tMD5sum of an N-char string in a given charset\n");
+	printf("\n\t-p <prefix>\tSuggested prefix of the N-char string whose MD5"
+			" sum\n\t\t\twe want to crack. Needs the -M option as well.\n");
+	printf("\n\t-C <charset>\tAny of the below character sets to use for "
+			"cracking:\n\t\t\t%s - [A-Za-z0-9] (default)\n"
+			"\t\t\t%s - [A-Za-z]\n"
+			"\t\t\t%s - [0-9]\n"
+			"\t\t\t%s - ~!@#$%%^&*()_+=-|[]{}`\\;:'\",<>./?\n"
+			"\t\t\t%s - alpha and digit and special together\n",
+			wc_util_charset_tostring(WC_UTIL_CHARSET_ALNUM),
+			wc_util_charset_tostring(WC_UTIL_CHARSET_ALPHA),
+			wc_util_charset_tostring(WC_UTIL_CHARSET_DIGIT),
+			wc_util_charset_tostring(WC_UTIL_CHARSET_SPECIAL),
+			wc_util_charset_tostring(WC_UTIL_CHARSET_ALNUMSPL));
 	printf("\n");
 	exit(1);
 }
@@ -63,15 +75,18 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 {
 	int opt = -1;
 	int rc = 0;
+	const char *appname = NULL;
 	if (!argv || !args)
 		return -1;
 	args->cl_filename = NULL;
 	args->max_devices = 1;
 	args->device_flag = WC_DEVICE_ANY;
+	args->charset = WC_UTIL_CHARSET_ALNUM;
+	args->nchars = 8;
 	args->md5sum = NULL;
 	args->prefix = NULL;
-
-	while ((opt = getopt(argc, argv, "hgcm:f:M:p:")) != -1) {
+	appname = WC_BASENAME(argv[0]);
+	while ((opt = getopt(argc, argv, "hgcm:f:M:p:C:N:")) != -1) {
 		switch (opt) {
 		case 'f':
 			args->cl_filename = strdup(optarg);
@@ -108,9 +123,37 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 				rc = -1;
 			}
 			break;
+		case 'C':
+			if (WC_STRCMPI(optarg, "alnum") == 0) {
+				args->charset = WC_UTIL_CHARSET_ALNUM;
+			} else if (WC_STRCMPI(optarg, "alpha") == 0) {
+				args->charset = WC_UTIL_CHARSET_ALPHA;
+			} else if (WC_STRCMPI(optarg, "alnumspl") == 0) {
+				args->charset = WC_UTIL_CHARSET_ALNUMSPL;
+			} else if (WC_STRCMPI(optarg, "digit") == 0) {
+				args->charset = WC_UTIL_CHARSET_DIGIT;
+			} else if (WC_STRCMPI(optarg, "special") == 0) {
+				args->charset = WC_UTIL_CHARSET_SPECIAL;
+			} else {
+				WC_WARN("Unknown charset %s given. Using the default.\n",
+						optarg);
+			}
+			break;
+		case 'N':
+			args->nchars = (uint8_t)strtol(optarg, NULL, 10);
+			if (args->nchars < 1) {
+				WC_WARN("Invalid no. of characters given: %s. Using 8.\n",
+						optarg);
+				args->nchars = 8;
+			} else if (args->nchars > 16) {
+				WC_WARN("%s does not support more than 16 characters. Using"
+						" 16\n", appname);
+				args->nchars = 16;
+			}
+			break;
 		case 'h':
 		default:
-			wc_arguments_usage(argv[0]);
+			wc_arguments_usage(appname);
 			break;
 		}
 	}
@@ -133,6 +176,8 @@ void wc_arguments_dump(const struct wc_arguments *args)
 			WC_INFO("CPU only\n");
 		if (args->device_flag == WC_DEVICE_GPU)
 			WC_INFO("GPU only\n");
+		WC_INFO("No. of chars: %u\n", args->nchars);
+		WC_INFO("Charset: %s\n", wc_util_charset_tostring(args->charset));
 		if (args->md5sum)
 			WC_INFO("Will try to crack MD5 sum: %s\n", args->md5sum);
 		if (args->prefix)

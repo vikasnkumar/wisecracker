@@ -29,9 +29,9 @@ if (NOT WC_GETOPT_H)
 endif (NOT WC_GETOPT_H)
 
 add_library(wisecracker_s STATIC runtime.c ${UTIL_SRCS})
-target_link_libraries(wisecracker_s ${OPENCL_LIBS})
+target_link_libraries(wisecracker_s ${OPENCL_LIBS} ${OS_LIBS})
 add_library(wisecracker SHARED runtime.c ${UTIL_SRCS})
-target_link_libraries(wisecracker ${OPENCL_LIBS})
+target_link_libraries(wisecracker ${OPENCL_LIBS} ${OS_LIBS})
 set_target_properties(wisecracker PROPERTIES DEFINE_SYMBOL "WC_COMPILING_DLL")
 install(TARGETS wisecracker_s ARCHIVE DESTINATION lib)
 install(TARGETS wisecracker RUNTIME DESTINATION bin LIBRARY DESTINATION lib

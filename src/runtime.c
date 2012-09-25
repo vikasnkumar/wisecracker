@@ -44,7 +44,7 @@ do { \
         rc = -1; \
         break; \
     } \
-    (VAR) = (char *)malloc((bufsz + 1) * sizeof(char)); \
+    (VAR) = (char *)WC_MALLOC((bufsz + 1) * sizeof(char)); \
     if ((VAR)) { \
         memcpy((VAR), buffer, bufsz); \
         (VAR)[bufsz] = '\0'; \

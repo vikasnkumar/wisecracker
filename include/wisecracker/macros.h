@@ -59,13 +59,36 @@ if ((RC) != CL_SUCCESS) { \
 	break; \
 }
 
-#define WC_MALLOC(A) malloc((A))
-#define WC_FREE(A) \
-do { \
-    if ((A)) \
-        free((A)); \
-    (A) = NULL; \
-} while (0)
+#ifdef WIN32
+	#define WC_MALLOC(A) HeapAlloc(GetProcessHeap(),0,(A))
+	#define WC_CALLOC(A,B) HeapAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,((A)*(B)))
+	#define WC_REALLOC(A,B) HeapReAlloc(GetProcessHeap(),HEAP_ZERO_MEMORY,(A),(B))
+	#define WC_FREE(A) \
+		do { \
+			if ((A)) { \
+				HeapFree(GetProcessHeap(), 0, (A)); \
+				(A) = NULL; \
+			} \
+		} while (0)
+	#define WC_STRCMPI _stricmp
+	#define WC_STRNCMPI _strincmp
+	#define snprintf _snprintf
+	#define strdup _strdup
+	#define WC_BASENAME PathFindFileName
+#else
+	#define WC_MALLOC(A) malloc((A))
+	#define WC_CALLOC(A,B) calloc((A),(B))
+	#define WC_REALLOC(A,B) realloc((A),(B))
+	#define WC_FREE(A) \
+		do { \
+			if ((A)) \
+			free((A)); \
+			(A) = NULL; \
+		} while (0)
+	#define WC_STRCMPI strcasecmp
+	#define WC_STRNCMPI strncasecmp
+	#define WC_BASENAME basename
+#endif
 
 #define WC_OPENCL_OPTS "-Werror -I."
 
