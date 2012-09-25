@@ -213,6 +213,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 	cl_uchar8 input;
 	cl_uchar16 digest;
 	size_t inlen = 0;
+	cl_ulong one, bitz;
 	if (!md5sum || !instr || !wc_runtime_is_usable(wc))
 		return -1;
 	if (strlen(md5sum) != (2 * MD5_DIGEST_LENGTH))
@@ -222,9 +223,10 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 		WC_WARN("Input string is already complete. Max length accepted is 7\n");
 		return -1;
 	}
-	max_possibilities = 8 - inlen;
-	max_possibilities = 1 << (6 * (8 - inlen));
-	WC_INFO("Max possibilities: %lu\n", (unsigned long)max_possibilities);
+	one = 1;
+	bitz = 6 * (8 - inlen);
+	max_possibilities = one << bitz; // to allow for 64-bit bit shifting
+	WC_INFO("Max possibilities: %lu\n", max_possibilities);
 	// copy the initial input
 	memset(&input, 0, sizeof(input));
 	for (idx = 0; idx < inlen; ++idx)
@@ -244,11 +246,11 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 		cl_mem matches_mem = (cl_mem)0;
 		cl_uchar8 match;
 		wc_device_t *dev = &wc->devices[idx];
-		uint32_t max_kernel_calls = 0;
+		cl_ulong max_kernel_calls = 0;
 		const size_t localmem_per_kernel = 32; // local mem used per kernel call
 		// max tries allowed based on local memory availability
 		size_t max_ll_tries = dev->localmem_sz / localmem_per_kernel;
-		cl_uint kdx;
+		cl_ulong kdx;
 		struct timeval tv1, tv2;
 		// if the max parallel tries < max workgroups then use the max parallel
 		// tries else use max workgroups
@@ -258,10 +260,10 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 			max_kernel_calls = 1;
 			max_ll_tries = max_possibilities;
 		} else {
-			max_kernel_calls = (uint32_t)(max_possibilities / max_ll_tries) +
+			max_kernel_calls = (cl_ulong)(max_possibilities / max_ll_tries) +
 				((max_possibilities % max_ll_tries) ? 1 : 0);
 		}
-		WC_INFO("For device[%u] Max tries: %lu Kernel calls: %u\n", idx,
+		WC_INFO("For device[%u] Max tries: %lu Kernel calls: %lu\n", idx,
 				max_ll_tries, max_kernel_calls);
 		wc_util_timeofday(&tv1);
 		// create the kernel program and the buffers
@@ -284,7 +286,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &digest);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &matches_mem);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &count);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &kdx);
+			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong), &kdx);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 			memset(&match, 0, sizeof(match));
 			rc = clEnqueueWriteBuffer(dev->cmdq, matches_mem, CL_FALSE, 0,
@@ -301,7 +303,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 			if (match.s[0] != 0) {
 				int8_t l = 0;
 				wc_util_timeofday(&tv2);
-				WC_INFO("Found match in %uth kernel call: ", kdx);
+				WC_INFO("Found match in %luth kernel call: ", kdx);
 				for (l = 0; l < 8; ++l)
 					WC_NULL("%c", match.s[l]);
 				WC_NULL("\n");

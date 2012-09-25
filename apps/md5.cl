@@ -449,7 +449,7 @@ __kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
 					uchar16 digest, /* MD5 digest to compare */
 					__global uchar8 *matches, /* matching string output */
 					uint count, /* maximum index count */
-					uint factor /* index multiplier */
+					ulong factor /* index multiplier */
 					)
 {
 	ulong id = get_global_id(0);
@@ -458,13 +458,15 @@ __kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
 	uchar buf[8];
 	uchar indices[8]; // each value is in [0. 64) so uchar is enough
 	short flag;
+	const ulong one = 1;
 	
 	if (id > count)
 		return;
 	id += count * factor; // for multiple kernel invocations
 	#pragma unroll 8
 	for (int i = 0; i < 8; ++i) {
-		indices[i] = (id / (ulong)(1 << (6 * i))) % 64;
+		ulong bb = 6 * i;
+		indices[i] = (id / (one << bb)) % 64;
 	}
 	vstore8(input, 0, buf);
 	#pragma unroll 8
