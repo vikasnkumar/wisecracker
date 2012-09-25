@@ -74,7 +74,7 @@ if ((RC) != CL_SUCCESS) { \
 	#define WC_STRNCMPI _strincmp
 	#define snprintf _snprintf
 	#define strdup _strdup
-	#define WC_BASENAME PathFindFileName
+	#define WC_BASENAME PathFindFileNameA
 #else
 	#define WC_MALLOC(A) malloc((A))
 	#define WC_CALLOC(A,B) calloc((A),(B))
