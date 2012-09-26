@@ -226,7 +226,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 	one = 1;
 	bitz = 6 * (8 - inlen);
 	max_possibilities = one << bitz; // to allow for 64-bit bit shifting
-	WC_INFO("Max possibilities: %lu\n", max_possibilities);
+	WC_INFO("Max possibilities: %lu\n", (unsigned long)max_possibilities);
 	// copy the initial input
 	memset(&input, 0, sizeof(input));
 	for (idx = 0; idx < inlen; ++idx)
@@ -264,7 +264,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 				((max_possibilities % max_ll_tries) ? 1 : 0);
 		}
 		WC_INFO("For device[%u] Max tries: %lu Kernel calls: %lu\n", idx,
-				max_ll_tries, max_kernel_calls);
+				max_ll_tries, (unsigned long)max_kernel_calls);
 		wc_util_timeofday(&tv1);
 		// create the kernel program and the buffers
 		kernel = clCreateKernel(dev->program, "md5sumcheck8", &rc);
@@ -303,7 +303,8 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 			if (match.s[0] != 0) {
 				int8_t l = 0;
 				wc_util_timeofday(&tv2);
-				WC_INFO("Found match in %luth kernel call: ", kdx);
+				WC_INFO("Found match in %luth kernel call: ",
+						(unsigned long)kdx);
 				for (l = 0; l < 8; ++l)
 					WC_NULL("%c", match.s[l]);
 				WC_NULL("\n");

@@ -174,6 +174,11 @@ EXTERN_C_BEGIN
 	#include <shlwapi.h>
 #endif
 
+#cmakedefine WC_LIBGEN_H
+#ifdef WC_LIBGEN_H
+	#include <libgen.h>
+#endif
+
 EXTERN_C_END
 #endif // __WC_CONFIG_H__
 
