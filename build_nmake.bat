@@ -44,6 +44,7 @@ pushd %CURDIR%
 
 REM force OPENCL_ROOT and OPENSSL_ROOT_DIR setup
 if "%OPENCL_ROOT%" == "" goto :openclerr
+set SSLOPT=ON
 if "%OPENSSL_ROOT_DIR%" == "" set SSLOPT=OFF
 if "%XXD%" == "" goto :xxderr
 

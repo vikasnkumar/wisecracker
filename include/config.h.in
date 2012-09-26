@@ -35,10 +35,16 @@
 #ifdef WIN32
     #if _MSC_VER >= 1300
         #ifndef WCDLL
-			#ifdef WC_COMPILING_DLL
-	            #define WCDLL __declspec(dllexport)
-			#else
+			// define this if linking with static lib
+			#ifdef WC_LINKING_STATIC
 				#define WCDLL
+			#else
+				// if linking with DLL
+				#ifdef WC_COMPILING_DLL
+		            #define WCDLL __declspec(dllexport)
+				#else
+					#define WCDLL __declspec(dllimport)
+				#endif
 			#endif
         #endif
             // Microsoft uses __FUNCTION__ instead of __func__
