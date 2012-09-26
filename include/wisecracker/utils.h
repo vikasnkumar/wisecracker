@@ -34,17 +34,17 @@ typedef enum {
 	WC_UTIL_CHARSET_ALNUMSPL
 } wc_util_charset_t;
 /* provide a string name for the charset enum entry */
-const char *wc_util_charset_tostring(wc_util_charset_t chs);
+WCDLL const char *wc_util_charset_tostring(wc_util_charset_t chs);
 
 /* load a full file into a character buffer */
-int wc_util_glob_file(const char *filename, unsigned char **outdata,
+WCDLL int wc_util_glob_file(const char *filename, unsigned char **outdata,
 						size_t *outlen);
 
 /* cross platform time-of-day retrieval function */
-int wc_util_timeofday(struct timeval *tv);
+WCDLL int wc_util_timeofday(struct timeval *tv);
 
 /* useful if you want to print the license of the code */
-const char *wc_util_license();
+WCDLL const char *wc_util_license();
 
 EXTERN_C_END
 

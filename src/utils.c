@@ -96,6 +96,8 @@ int wc_util_timeofday(struct timeval *tv)
 	return gettimeofday(tv, NULL);
 }
 
+#endif
+
 const char *wc_util_license()
 {
 	static const char __wc_util_license[] = 
@@ -118,5 +120,3 @@ const char *wc_util_charset_tostring(wc_util_charset_t chs)
 	default: return "unknown";
 	}
 }
-
-#endif
