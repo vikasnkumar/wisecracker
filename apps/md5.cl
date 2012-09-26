@@ -455,10 +455,10 @@ __kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
 	ulong id = get_global_id(0);
 	MD5_CTX ctx;
 	__local uchar out[16];
+	__local uchar dig[16];
 	uchar buf[8];
 	uchar indices[8]; // each value is in [0. 64) so uchar is enough
 	short flag;
-	const ulong one = 1;
 	
 	if (id > count)
 		return;
@@ -466,6 +466,7 @@ __kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
 	#pragma unroll 8
 	for (int i = 0; i < 8; ++i) {
 		ulong bb = 6 * i;
+		const ulong one = 1;
 		indices[i] = (id / (one << bb)) % 64;
 	}
 	vstore8(input, 0, buf);
@@ -479,26 +480,13 @@ __kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
 	md5_init(&ctx);
 	md5_update_private(&ctx, buf, 8);
 	md5_final(&ctx, out);
-
+	// check if it matches
+	vstore16(digest, 0, dig);
 	flag = 0;
-	flag += (out[0] == digest.s0) ? 1 : 0;
-	flag += (out[1] == digest.s1) ? 1 : 0;
-	flag += (out[2] == digest.s2) ? 1 : 0;
-	flag += (out[3] == digest.s3) ? 1 : 0;
-	flag += (out[4] == digest.s4) ? 1 : 0;
-	flag += (out[5] == digest.s5) ? 1 : 0;
-	flag += (out[6] == digest.s6) ? 1 : 0;
-	flag += (out[7] == digest.s7) ? 1 : 0;
-	flag += (out[8] == digest.s8) ? 1 : 0;
-	flag += (out[9] == digest.s9) ? 1 : 0;
-	flag += (out[10] == digest.sa) ? 1 : 0;
-	flag += (out[11] == digest.sb) ? 1 : 0;
-	flag += (out[12] == digest.sc) ? 1 : 0;
-	flag += (out[13] == digest.sd) ? 1 : 0;
-	flag += (out[14] == digest.se) ? 1 : 0;
-	flag += (out[15] == digest.sf) ? 1 : 0;
-	// if match is found
-	if (flag == 16) {
+	#pragma unroll 16
+	for (int i = 0; i < 16; ++i)
+		flag |= (dig[i] - out[i]);
+	if (flag == 0) {
 		matches[0] = vload8(0, buf);
 	}
 }
