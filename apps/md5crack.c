@@ -89,7 +89,7 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 	while ((opt = getopt(argc, argv, "hgcm:f:M:p:C:N:")) != -1) {
 		switch (opt) {
 		case 'f':
-			args->cl_filename = strdup(optarg);
+			args->cl_filename = wc_util_strdup(optarg);
 			if (!args->cl_filename) {
 				WC_ERROR_OUTOFMEMORY(strlen(optarg) + 1);
 				rc = -1;
@@ -107,7 +107,7 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 		case 'M':
 			/* each byte is represented as 2 characters */
 			if (strlen(optarg) == (2 * MD5_DIGEST_LENGTH)) {
-				args->md5sum = strdup(optarg);
+				args->md5sum = wc_util_strdup(optarg);
 				if (!args->md5sum) {
 					WC_ERROR_OUTOFMEMORY(2 * MD5_DIGEST_LENGTH);
 					rc = -1;
@@ -117,7 +117,7 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 			}
 			break;
 		case 'p':
-			args->prefix = strdup(optarg);
+			args->prefix = wc_util_strdup(optarg);
 			if (!args->prefix) {
 				WC_ERROR_OUTOFMEMORY(strlen(optarg));
 				rc = -1;

@@ -46,6 +46,9 @@ WCDLL int wc_util_timeofday(struct timeval *tv);
 /* useful if you want to print the license of the code */
 WCDLL const char *wc_util_license();
 
+/* cross platform and cross-DLL compatible strdup */
+WCDLL char *wc_util_strdup(const char *str);
+
 EXTERN_C_END
 
 #endif //__WISECRACKER_UTILS_H__

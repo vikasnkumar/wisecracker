@@ -73,7 +73,7 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 	while ((opt = getopt(argc, argv, "hgcm:f:w:")) != -1) {
 		switch (opt) {
 		case 'f':
-			args->cl_filename = strdup(optarg);
+			args->cl_filename = wc_util_strdup(optarg);
 			if (!args->cl_filename) {
 				WC_ERROR_OUTOFMEMORY(strlen(optarg) + 1);
 				rc = -1;

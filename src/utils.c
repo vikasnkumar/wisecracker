@@ -77,27 +77,6 @@ int wc_util_glob_file(const char *filename, unsigned char **outdata,
 	return rc;
 }
 
-#ifndef WC_SYSTIME_H
-int wc_util_timeofday(struct timeval *tv)
-{
-	if (tv) {
-		struct _timeb tb = { 0 };
-		_ftime_s(&tb);
-		tv->tv_sec = (long)tb.time;
-		tv->tv_usec = (long)tb.millitm * 1000;
-		return 0;
-	}
-	return -1;
-}
-#else
-
-int wc_util_timeofday(struct timeval *tv)
-{
-	return gettimeofday(tv, NULL);
-}
-
-#endif
-
 const char *wc_util_license()
 {
 	static const char __wc_util_license[] = 
@@ -120,3 +99,45 @@ const char *wc_util_charset_tostring(wc_util_charset_t chs)
 	default: return "unknown";
 	}
 }
+
+#ifndef WC_SYSTIME_H
+int wc_util_timeofday(struct timeval *tv)
+{
+	if (tv) {
+		struct _timeb tb = { 0 };
+		_ftime_s(&tb);
+		tv->tv_sec = (long)tb.time;
+		tv->tv_usec = (long)tb.millitm * 1000;
+		return 0;
+	}
+	return -1;
+}
+
+char *wc_util_strdup(const char *str)
+{
+	char *out = NULL;
+	if (str) { 
+		size_t len = strlen(str);
+		out = WC_MALLOC(len + 1);
+		if (!out) {
+			WC_ERROR_OUTOFMEMORY(len + 1);
+		} else {
+			memcpy(out, str, len + 1);
+		}
+	}
+	return out;
+}
+
+#else
+
+int wc_util_timeofday(struct timeval *tv)
+{
+	return gettimeofday(tv, NULL);
+}
+
+char *wc_util_strdup(const char *str)
+{
+	return strdup(str);
+}
+
+#endif
