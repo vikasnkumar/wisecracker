@@ -38,6 +38,7 @@ option(USE_OPENSSL "Use OpenSSL" ON)
 
 # Custom includes
 set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
+set(WC_APPSBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/apps)
 include(deps/osdefaults.cmake)
 if (WIN32)
 	include(deps/openclwin.cmake)
