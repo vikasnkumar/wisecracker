@@ -223,6 +223,7 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 		WC_WARN("Input string is already complete. Max length accepted is 7\n");
 		return -1;
 	}
+	//TODO: change this 64 bit shifting to work as per charset
 	one = 1;
 	bitz = 6 * (8 - inlen);
 	max_possibilities = one << bitz; // to allow for 64-bit bit shifting
@@ -276,17 +277,22 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 		// check the matched output to see if anything worked in each kernel
 		// call. break if it worked else continue.
 		// cleanup memory and kernel code
-		for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
+		//for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
+		for (kdx = 0; kdx < max_kernel_calls; kdx += 64) {
 			const cl_uint workdim = 1;
 			size_t local_work_size = 1;
 			size_t global_work_size = max_ll_tries;
 			cl_uint count = (cl_uint)max_ll_tries;
 			uint32_t argc = 0;
+			cl_ulong2 factor;
+			factor.s[0] = kdx;
+			factor.s[1] = (kdx + 64 < max_kernel_calls) ? (kdx + 64) :
+							max_kernel_calls;
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar8), &input);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &digest);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &matches_mem);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &count);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong), &kdx);
+			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong2), &factor);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 			memset(&match, 0, sizeof(match));
 			rc = clEnqueueWriteBuffer(dev->cmdq, matches_mem, CL_FALSE, 0,

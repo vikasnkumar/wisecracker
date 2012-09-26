@@ -449,44 +449,46 @@ __kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
 					uchar16 digest, /* MD5 digest to compare */
 					__global uchar8 *matches, /* matching string output */
 					uint count, /* maximum index count */
-					ulong factor /* index multiplier */
+					ulong2 factor /* index multiplier */
 					)
 {
-	ulong id = get_global_id(0);
-	MD5_CTX ctx;
-	__local uchar out[16];
-	__local uchar dig[16];
-	uchar buf[8];
-	uchar indices[8]; // each value is in [0. 64) so uchar is enough
-	short flag;
-	
-	if (id > count)
+	if (get_global_id(0) > count)
 		return;
-	id += count * factor; // for multiple kernel invocations
-	#pragma unroll 8
-	for (int i = 0; i < 8; ++i) {
-		ulong bb = 6 * i;
-		const ulong one = 1;
-		indices[i] = (id / (one << bb)) % 64;
-	}
-	vstore8(input, 0, buf);
-	#pragma unroll 8
-	for (int i = 7; i >= 0; --i) {
-		if (buf[i] == 0) {
-			buf[i] = CHARACTERS[indices[7 - i]];
+	for (int j = factor.s0; j < factor.s1; ++j) {
+		MD5_CTX ctx;
+		__local uchar out[16];
+		__local uchar dig[16];
+		uchar buf[8];
+		uchar indices[8]; // each value is in [0. 64) so uchar is enough
+		short flag;
+		ulong id = get_global_id(0);
+		id += count * j; // for multiple kernel invocations
+		#pragma unroll 8
+		for (int i = 0; i < 8; ++i) {
+			ulong bb = 6 * i;
+			const ulong one = 1;
+			indices[i] = (id / (one << bb)) % 64;
 		}
-	}
+		vstore8(input, 0, buf);
+		#pragma unroll 8
+		for (int i = 7; i >= 0; --i) {
+			if (buf[i] == 0) {
+				buf[i] = CHARACTERS[indices[7 - i]];
+			}
+		}
 
-	md5_init(&ctx);
-	md5_update_private(&ctx, buf, 8);
-	md5_final(&ctx, out);
-	// check if it matches
-	vstore16(digest, 0, dig);
-	flag = 0;
-	#pragma unroll 16
-	for (int i = 0; i < 16; ++i)
-		flag |= (dig[i] - out[i]);
-	if (flag == 0) {
-		matches[0] = vload8(0, buf);
+		md5_init(&ctx);
+		md5_update_private(&ctx, buf, 8);
+		md5_final(&ctx, out);
+		// check if it matches
+		vstore16(digest, 0, dig);
+		flag = 0;
+		#pragma unroll 16
+		for (int i = 0; i < 16; ++i)
+			flag |= (dig[i] - out[i]);
+		if (flag == 0) {
+			matches[0] = vload8(0, buf);
+			break;
+		}
 	}
 }
