@@ -496,6 +496,9 @@ __constant ulong WC_DIVISORS_ALNUMSPL[] = {
 	572994802228616704 // 94 ^ 9
 };
 
+#ifndef WC_MD5_CRACK_SIZE
+	#define WC_MD5_CRACK_SIZE 8
+#endif
 __kernel void wc_md5sum_check_8(uchar8 input, /* starting portion of the string */
 					uchar16 digest, /* MD5 digest to compare */
 					__global uchar8 *matches, /* matching string output */
@@ -545,25 +548,25 @@ __kernel void wc_md5sum_check_8(uchar8 input, /* starting portion of the string 
 	for (int j = idxrange.s0; j < idxrange.s1; ++j) {
 		MD5_CTX ctx;
 		__local uchar out[16];
-		uchar buf[8];
-		uchar indices[8]; // each value is in [0. 64) so uchar is enough
+		uchar buf[8]; // max allowed
+		uchar indices[8]; // each value is in [0. 94) so uchar is enough
 		short flag;
 		ulong id = get_global_id(0);
 		id += stride * j; // for multiple kernel invocations
-		#pragma unroll 8
-		for (int i = 0; i < 8; ++i) {
+		#pragma unroll WC_MD5_CRACK_SIZE
+		for (int i = 0; i < WC_MD5_CRACK_SIZE; ++i) {
 			indices[i] = (id / divisors[i]) % charset_sz;
 		}
 		vstore8(input, 0, buf);
-		#pragma unroll 8
-		for (int i = 7; i >= 0; --i) {
+		#pragma unroll WC_MD5_CRACK_SIZE
+		for (int i = WC_MD5_CRACK_SIZE - 1; i >= 0; --i) {
 			if (buf[i] == 0) {
-				buf[i] = charset[indices[7 - i]];
+				buf[i] = charset[indices[WC_MD5_CRACK_SIZE - 1 - i]];
 			}
 		}
 
 		md5_init(&ctx);
-		md5_update_private(&ctx, buf, 8);
+		md5_update_private(&ctx, buf, WC_MD5_CRACK_SIZE);
 		md5_final(&ctx, out);
 		// check if it matches with digest
 		flag = 0;

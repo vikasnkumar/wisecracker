@@ -143,13 +143,12 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 		case 'N':
 			args->nchars = (uint8_t)strtol(optarg, NULL, 10);
 			if (args->nchars < 1) {
-				WC_WARN("Invalid no. of characters given: %s. Using 8.\n",
-						optarg);
-				args->nchars = 8;
-			} else if (args->nchars > 16) {
-				WC_WARN("%s does not support more than 16 characters. Using"
-						" 16\n", appname);
-				args->nchars = 16;
+				WC_ERROR("Invalid no. of characters given: %s.\n", optarg);
+				rc = -1;
+			} else if (args->nchars > 8) {
+				WC_ERROR("%s does not support more than 8 characters.\n",
+						appname);
+				rc = -1;
 			}
 			break;
 		case 'h':
@@ -220,6 +219,20 @@ cl_ulong wc_md5_possibilities(wc_util_charset_t chs, uint8_t nchars)
 	return result;
 }
 
+char *wc_md5_create_buildopts(uint8_t nchars)
+{
+	if (nchars >= 1 && nchars <= 8) {
+		char *buildopts = WC_MALLOC(256);
+		if (buildopts) {
+			snprintf(buildopts, 256, "-DWC_MD5_CRACK_SIZE=%d", (int)nchars);
+			return buildopts;
+		} else {
+			WC_ERROR_OUTOFMEMORY(256);
+		}
+	}
+	return NULL;
+}
+
 int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		wc_util_charset_t charset, uint8_t nchars)
 {
@@ -273,6 +286,8 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		size_t parallel_tries = dev->localmem_sz / localmem_per_kernel;
 		cl_ulong kdx;
 		struct timeval tv1, tv2;
+		float progress;
+		double ttinterval = -1.0;
 		// if the max parallel tries < max workgroups then use the max parallel
 		// tries else use max workgroups
 		if ((parallel_tries > (dev->workgroup_sz * dev->compute_units)))
@@ -285,7 +300,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			max_kernel_calls = (cl_ulong)(max_possibilities / parallel_tries) +
 				((max_possibilities % parallel_tries) ? 1 : 0);
 		}
-		WC_INFO("For device[%u] Max tries: %lu Kernel calls: %lu\n", idx,
+		WC_INFO("For device[%u] Parallel tries: %lu Kernel calls: %lu\n", idx,
 				parallel_tries, (unsigned long)max_kernel_calls);
 		wc_util_timeofday(&tv1);
 		// create the kernel program and the buffers
@@ -298,7 +313,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		// check the matched output to see if anything worked in each kernel
 		// call. break if it worked else continue.
 		// cleanup memory and kernel code
-		//for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
+		progress = 0.0;
 		for (kdx = 0; kdx < max_kernel_calls; kdx += charset_sz) {
 			const cl_uint workdim = 1;
 			size_t local_work_size = 1;
@@ -307,6 +322,8 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			uint32_t argc = 0;
 			cl_ulong2 index_range;
 			cl_uint charset_type = (cl_uint)charset;
+			float cur_progress = 0;
+
 			index_range.s[0] = kdx;
 			index_range.s[1] = ((kdx + charset_sz) < max_kernel_calls) ?
 							(kdx + charset_sz) : max_kernel_calls;
@@ -342,6 +359,16 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 						WC_TIME_TAKEN(tv1, tv2));
 				break;
 			}
+			cur_progress = (float)((kdx * 100.0) / max_kernel_calls);
+			if ((cur_progress - progress) >= 1.0) {
+				progress = cur_progress;
+				if (ttinterval < 0.0) {
+					wc_util_timeofday(&tv2);
+					ttinterval = WC_TIME_TAKEN(tv1, tv2);
+				}
+				WC_INFO("Progress: %.02f%% Estimated Remaining Time: %lfs\n",
+						progress, ttinterval * (100.0 - progress));
+			}
 		}
 		if (match.s[0] == 0)
 			WC_INFO("Unable to find a match.\n");
@@ -361,6 +388,7 @@ int main(int argc, char **argv)
 	int rc = 0;
 	uint8_t alloced = 0;
 	struct wc_arguments args;
+	char *buildopts = NULL;
 
 	WC_NULL("%s\n", wc_util_license());
 	memset(&args, 0, sizeof(args));
@@ -390,8 +418,10 @@ int main(int argc, char **argv)
 	wc = wc_runtime_create(args.device_flag, args.max_devices);
 	assert(wc != NULL);
 	wc_runtime_dump(wc);
-	
-	rc = wc_runtime_program_load(wc, (const char *)code, codelen, NULL);
+
+	// we create the build options for nchars
+	buildopts = wc_md5_create_buildopts(args.nchars);
+	rc = wc_runtime_program_load(wc, (const char *)code, codelen, buildopts);
 	if (rc < 0)
 		WC_ERROR("Unable to compile the source code from %s\n",
 				args.cl_filename ? args.cl_filename : WC_MD5_CL);
@@ -403,6 +433,7 @@ int main(int argc, char **argv)
 	wc_runtime_destroy(wc);
 	if (alloced)
 		WC_FREE(code);
+	WC_FREE(buildopts);
 	wc_arguments_cleanup(&args);
 	return rc;
 }
