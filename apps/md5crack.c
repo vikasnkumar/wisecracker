@@ -224,7 +224,7 @@ char *wc_md5_create_buildopts(uint8_t nchars)
 	if (nchars >= 1 && nchars <= 8) {
 		char *buildopts = WC_MALLOC(256);
 		if (buildopts) {
-			snprintf(buildopts, 256, "-DWC_MD5_CRACK_SIZE=%d", (int)nchars);
+			snprintf(buildopts, 256, "-DWC_MD5_CHECK_SIZE=%d", (int)nchars);
 			return buildopts;
 		} else {
 			WC_ERROR_OUTOFMEMORY(256);
@@ -239,11 +239,11 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 	cl_int rc = CL_SUCCESS;
 	uint32_t idx;
 	cl_ulong max_possibilities = 0;
-	cl_uchar8 input;
+	cl_uchar16 input;
 	cl_uchar16 digest;
 	size_t pfxlen = 0;
 	cl_ulong charset_sz = wc_util_charset_size(charset);
-	if (!md5sum || !wc_runtime_is_usable(wc) || (nchars < 1))
+	if (!md5sum || !wc_runtime_is_usable(wc) || (nchars < 1) || (nchars >= 16))
 		return -1;
 	if (strlen(md5sum) != (2 * MD5_DIGEST_LENGTH))
 		return -1;
@@ -278,7 +278,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 	for (idx = 0; idx < wc->device_max; ++idx) {
 		cl_kernel kernel = (cl_kernel)0;
 		cl_mem matches_mem = (cl_mem)0;
-		cl_uchar8 match;
+		cl_uchar16 match;
 		wc_device_t *dev = &wc->devices[idx];
 		cl_ulong max_kernel_calls = 0;
 		const size_t localmem_per_kernel = 32; // local mem used per kernel call
@@ -307,7 +307,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 		matches_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
-				sizeof(cl_uchar8), NULL, &rc);
+				sizeof(cl_uchar16), NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 		// invoke the kernel as many times as needed
 		// check the matched output to see if anything worked in each kernel
@@ -327,7 +327,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			index_range.s[0] = kdx;
 			index_range.s[1] = ((kdx + charset_sz) < max_kernel_calls) ?
 							(kdx + charset_sz) : max_kernel_calls;
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar8), &input);
+			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &input);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &digest);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &matches_mem);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &charset_type);
@@ -337,13 +337,13 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 			memset(&match, 0, sizeof(match));
 			rc = clEnqueueWriteBuffer(dev->cmdq, matches_mem, CL_FALSE, 0,
-					sizeof(cl_uchar8), &match, 0, NULL, NULL);
+					sizeof(cl_uchar16), &match, 0, NULL, NULL);
 			WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
 			rc = clEnqueueNDRangeKernel(dev->cmdq, kernel, workdim, NULL,
 					&global_work_size, &local_work_size, 0, NULL, NULL);
 			WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
 			rc = clEnqueueReadBuffer(dev->cmdq, matches_mem, CL_TRUE, 0,
-					sizeof(cl_uchar8), &match, 0, NULL, NULL);
+					sizeof(cl_uchar16), &match, 0, NULL, NULL);
 			WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
 			rc = clFlush(dev->cmdq);
 			WC_ERROR_OPENCL_BREAK(clFlush, rc);

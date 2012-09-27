@@ -496,12 +496,12 @@ __constant ulong WC_DIVISORS_ALNUMSPL[] = {
 	572994802228616704 // 94 ^ 9
 };
 
-#ifndef WC_MD5_CRACK_SIZE
-	#define WC_MD5_CRACK_SIZE 8
+#ifndef WC_MD5_CHECK_SIZE
+	#define WC_MD5_CHECK_SIZE 8
 #endif
-__kernel void wc_md5sum_check_8(uchar8 input, /* starting portion of the string */
+__kernel void wc_md5sum_check(uchar16 input, /* starting portion of the string */
 					uchar16 digest, /* MD5 digest to compare */
-					__global uchar8 *matches, /* matching string output */
+					__global uchar16 *matches, /* matching string output */
 					uint charset_type, /* charset type */
 					ulong stride, /* maximum stride */
 					ulong2 idxrange /* index range */
@@ -548,25 +548,25 @@ __kernel void wc_md5sum_check_8(uchar8 input, /* starting portion of the string 
 	for (ulong j = idxrange.s0; j < idxrange.s1; ++j) {
 		MD5_CTX ctx;
 		__local uchar out[16];
-		uchar buf[8]; // max allowed
-		uchar indices[8]; // each value is in [0. 94) so uchar is enough
+		uchar buf[16]; // max allowed
+		uchar indices[16]; // each value is in [0. 94) so uchar is enough
 		short flag;
 		ulong id = get_global_id(0);
 		id += stride * j; // for multiple kernel invocations
-		#pragma unroll WC_MD5_CRACK_SIZE
-		for (int i = 0; i < WC_MD5_CRACK_SIZE; ++i) {
+		#pragma unroll WC_MD5_CHECK_SIZE
+		for (int i = 0; i < WC_MD5_CHECK_SIZE; ++i) {
 			indices[i] = (id / divisors[i]) % charset_sz;
 		}
-		vstore8(input, 0, buf);
-		#pragma unroll WC_MD5_CRACK_SIZE
-		for (int i = WC_MD5_CRACK_SIZE - 1; i >= 0; --i) {
+		vstore16(input, 0, buf);
+		#pragma unroll WC_MD5_CHECK_SIZE
+		for (int i = WC_MD5_CHECK_SIZE - 1; i >= 0; --i) {
 			if (buf[i] == 0) {
-				buf[i] = charset[indices[WC_MD5_CRACK_SIZE - 1 - i]];
+				buf[i] = charset[indices[WC_MD5_CHECK_SIZE - 1 - i]];
 			}
 		}
 
 		md5_init(&ctx);
-		md5_update_private(&ctx, buf, WC_MD5_CRACK_SIZE);
+		md5_update_private(&ctx, buf, WC_MD5_CHECK_SIZE);
 		md5_final(&ctx, out);
 		// check if it matches with digest
 		flag = 0;
@@ -574,7 +574,7 @@ __kernel void wc_md5sum_check_8(uchar8 input, /* starting portion of the string 
 		for (int i = 0; i < 16; ++i)
 			flag |= (dig[i] - out[i]);
 		if (flag == 0) {
-			matches[0] = vload8(0, buf);
+			matches[0] = vload16(0, buf);
 			break;
 		}
 	}
