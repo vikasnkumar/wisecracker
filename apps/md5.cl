@@ -373,7 +373,7 @@ void md5_transform_internal(MD5_CTX *ctx, const uint *x)
 #ifndef MAX_BLOCK_LEN
 	#define MAX_BLOCK_LEN 512
 #endif
-__kernel void md5sum(__global uchar *input, /* complete set of buffer blocks */
+__kernel void wc_md5sum(__global uchar *input, /* complete set of buffer blocks */
 					__global uint *inputlen, /* block length. Max 512 each */
 					__global uchar16 *digest, /* output MD5 digests. 16 each */
 					uint count, /* max number of blocks */
@@ -399,7 +399,7 @@ __kernel void md5sum(__global uchar *input, /* complete set of buffer blocks */
 	digest[index] = vload16(0, out);
 }
 
-__constant uchar CHARSET_ALNUMSPL[94] = {
+__constant uchar WC_CHARSET_ALNUMSPL[94] = {
 	'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
 	'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P',
 	'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X',
@@ -429,7 +429,7 @@ __constant uchar CHARSET_ALNUMSPL[94] = {
 #define WC_UTIL_CHARSET_SPECIAL_SZ 32
 #define	WC_UTIL_CHARSET_ALNUMSPL_SZ 94
 
-__constant ulong DIVISORS_ALPHA[] = {
+__constant ulong WC_DIVISORS_ALPHA[] = {
 	1, // 52 ^ 0
 	52, // 52 ^ 1
 	2704, // 52 ^ 2
@@ -442,7 +442,7 @@ __constant ulong DIVISORS_ALPHA[] = {
 	2779905883635712, // 52 ^ 9
 	144555105949057024 // 52 ^ 10
 };
-__constant ulong DIVISORS_DIGIT[] = {
+__constant ulong WC_DIVISORS_DIGIT[] = {
 	1, // 10 ^ 0
 	10, // 10 ^ 1
 	100, // 10 ^ 2
@@ -455,7 +455,7 @@ __constant ulong DIVISORS_DIGIT[] = {
 	1000000000, // 10 ^ 9
 	10000000000 // 10 ^ 10
 };
-__constant ulong DIVISORS_ALNUM[] = {
+__constant ulong WC_DIVISORS_ALNUM[] = {
 	1, // 62 ^ 0
 	62, // 62 ^ 1
 	3844, // 62 ^ 2
@@ -468,7 +468,7 @@ __constant ulong DIVISORS_ALNUM[] = {
 	13537086546263552, // 62 ^ 9
 	839299365868340224 // 62 ^ 10
 };
-__constant ulong DIVISORS_SPECIAL[] = {
+__constant ulong WC_DIVISORS_SPECIAL[] = {
 	1, // 32 ^ 0
 	32, // 32 ^ 1
 	1024, // 32 ^ 2
@@ -483,7 +483,7 @@ __constant ulong DIVISORS_SPECIAL[] = {
 	36028797018963968, // 32 ^ 11
 	1152921504606846976 // 32 ^ 12
 };
-__constant ulong DIVISORS_ALNUMSPL[] = {
+__constant ulong WC_DIVISORS_ALNUMSPL[] = {
 	1, // 94 ^ 0
 	94, // 94 ^ 1
 	8836, // 94 ^ 2
@@ -496,7 +496,7 @@ __constant ulong DIVISORS_ALNUMSPL[] = {
 	572994802228616704 // 94 ^ 9
 };
 
-__kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
+__kernel void wc_md5sum_check_8(uchar8 input, /* starting portion of the string */
 					uchar16 digest, /* MD5 digest to compare */
 					__global uchar8 *matches, /* matching string output */
 					uint charset_type, /* charset type */
@@ -504,36 +504,36 @@ __kernel void md5sumcheck8(uchar8 input, /* starting portion of the string */
 					ulong2 idxrange /* index range */
 					)
 {
-	__constant ulong *divisors = DIVISORS_ALNUMSPL;
-	__constant uchar *charset = CHARSET_ALNUMSPL;
+	__constant ulong *divisors = WC_DIVISORS_ALNUMSPL;
+	__constant uchar *charset = WC_CHARSET_ALNUMSPL;
 	uint charset_sz = WC_UTIL_CHARSET_ALNUMSPL_SZ;
 
 	if (get_global_id(0) > stride)
 		return;
 	switch (charset_type) {
 	case WC_UTIL_CHARSET_ALPHA:
-		divisors = DIVISORS_ALPHA;
-		charset = CHARSET_ALNUMSPL;
+		divisors = WC_DIVISORS_ALPHA;
+		charset = WC_CHARSET_ALNUMSPL;
 		charset_sz = WC_UTIL_CHARSET_ALPHA_SZ;
 		break;
 	case WC_UTIL_CHARSET_DIGIT:
-		divisors = DIVISORS_DIGIT;
-		charset = &CHARSET_ALNUMSPL[52];
+		divisors = WC_DIVISORS_DIGIT;
+		charset = &WC_CHARSET_ALNUMSPL[52];
 		charset_sz = WC_UTIL_CHARSET_DIGIT_SZ;
 		break;
 	case WC_UTIL_CHARSET_ALNUM:
-		divisors = DIVISORS_ALNUM;
-		charset = CHARSET_ALNUMSPL;
+		divisors = WC_DIVISORS_ALNUM;
+		charset = WC_CHARSET_ALNUMSPL;
 		charset_sz = WC_UTIL_CHARSET_ALNUM_SZ;
 		break;
 	case WC_UTIL_CHARSET_SPECIAL:
-		divisors = DIVISORS_SPECIAL;
-		charset = &CHARSET_ALNUMSPL[62];
+		divisors = WC_DIVISORS_SPECIAL;
+		charset = &WC_CHARSET_ALNUMSPL[62];
 		charset_sz = WC_UTIL_CHARSET_SPECIAL_SZ;
 		break;
 	case WC_UTIL_CHARSET_ALNUMSPL:
-		divisors = DIVISORS_ALNUMSPL;
-		charset = CHARSET_ALNUMSPL;
+		divisors = WC_DIVISORS_ALNUMSPL;
+		charset = WC_CHARSET_ALNUMSPL;
 		charset_sz = WC_UTIL_CHARSET_ALNUMSPL_SZ;
 	default: // use the defaults set up earlier
 		break;

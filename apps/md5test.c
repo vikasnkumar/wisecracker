@@ -36,6 +36,7 @@ static unsigned char wc_md5_cl_code[] = {
 	#include <md5_cl.h>
 };
 static const size_t wc_md5_cl_codelen = sizeof(wc_md5_cl_code);
+const char *wc_md5_cl_kernel = "wc_md5sum";
 
 struct wc_arguments {
 	char *cl_filename;
@@ -201,7 +202,7 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		do {
 			struct timeval tv1, tv2;
 			wc_util_timeofday(&tv1);
-			kernel = clCreateKernel(dev->program, "md5sum", &rc);
+			kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 			input_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY, ilen,
 										NULL, &rc);

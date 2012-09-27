@@ -105,11 +105,11 @@ const char *wc_util_charset_tostring(wc_util_charset_t chs)
 size_t wc_util_charset_size(wc_util_charset_t chs)
 {
 	switch (chs) {
-	case WC_UTIL_CHARSET_ALPHA: return 52;
-	case WC_UTIL_CHARSET_DIGIT: return 10;
-	case WC_UTIL_CHARSET_ALNUM: return 62;
-	case WC_UTIL_CHARSET_SPECIAL: return 32;
-	case WC_UTIL_CHARSET_ALNUMSPL: return 94;
+	case WC_UTIL_CHARSET_ALPHA: return WC_UTIL_CHARSET_ALPHA_SZ;
+	case WC_UTIL_CHARSET_DIGIT: return WC_UTIL_CHARSET_DIGIT_SZ;
+	case WC_UTIL_CHARSET_ALNUM: return WC_UTIL_CHARSET_ALNUM_SZ;
+	case WC_UTIL_CHARSET_SPECIAL: return WC_UTIL_CHARSET_SPECIAL_SZ;
+	case WC_UTIL_CHARSET_ALNUMSPL: return WC_UTIL_CHARSET_ALNUMSPL_SZ;
 	default:
 		WC_WARN("Invalid charset given.\n");
 		return 0;

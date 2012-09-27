@@ -32,6 +32,7 @@ static unsigned char wc_md5_cl_code[] = {
 	#include <md5_cl.h>
 };
 static const size_t wc_md5_cl_codelen = sizeof(wc_md5_cl_code);
+const char *wc_md5_cl_kernel = "wc_md5sum_check_8";
 
 struct wc_arguments {
 	char *cl_filename;
@@ -288,7 +289,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				parallel_tries, (unsigned long)max_kernel_calls);
 		wc_util_timeofday(&tv1);
 		// create the kernel program and the buffers
-		kernel = clCreateKernel(dev->program, "md5sumcheck8", &rc);
+		kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 		matches_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
 				sizeof(cl_uchar8), NULL, &rc);
