@@ -32,7 +32,7 @@ static unsigned char wc_md5_cl_code[] = {
 	#include <md5_cl.h>
 };
 static const size_t wc_md5_cl_codelen = sizeof(wc_md5_cl_code);
-const char *wc_md5_cl_kernel = "wc_md5sum_check_8";
+const char *wc_md5_cl_kernel = "wc_md5sum_check";
 
 struct wc_arguments {
 	char *cl_filename;
