@@ -205,33 +205,52 @@ static const unsigned char wc_md5_decoder[0x80] = {
 	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
 };
 
-int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
+cl_ulong wc_md5_possibilities(wc_util_charset_t chs, uint8_t nchars)
+{
+	cl_ulong result = 1;
+	cl_ulong chsz = wc_util_charset_size(chs);
+	// calculate chsz ^ nchars here
+	while (nchars) {
+		if (nchars & 1)
+			result *= chsz;
+		nchars >>= 1;
+		chsz *= chsz;
+	}
+	return result;
+}
+
+int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
+		wc_util_charset_t charset, uint8_t nchars)
 {
 	cl_int rc = CL_SUCCESS;
 	uint32_t idx;
 	cl_ulong max_possibilities = 0;
 	cl_uchar8 input;
 	cl_uchar16 digest;
-	size_t inlen = 0;
-	cl_ulong one, bitz;
-	if (!md5sum || !instr || !wc_runtime_is_usable(wc))
+	size_t pfxlen = 0;
+	cl_ulong charset_sz = wc_util_charset_size(charset);
+	if (!md5sum || !wc_runtime_is_usable(wc) || (nchars < 1))
 		return -1;
 	if (strlen(md5sum) != (2 * MD5_DIGEST_LENGTH))
 		return -1;
-	inlen = strlen(instr);
-	if (inlen >= 8) {
-		WC_WARN("Input string is already complete. Max length accepted is 7\n");
+	pfxlen = prefix ? strlen(prefix) : 0;
+	if (pfxlen >= nchars) {
+		WC_WARN("Input string is already complete. Max length accepted is %d\n",
+				(int)nchars);
 		return -1;
 	}
-	//TODO: change this 64 bit shifting to work as per charset
-	one = 1;
-	bitz = 6 * (8 - inlen);
-	max_possibilities = one << bitz; // to allow for 64-bit bit shifting
+	nchars -= (uint8_t)pfxlen;
+	max_possibilities = wc_md5_possibilities(charset, nchars);
+	if (max_possibilities == 0) {
+		WC_WARN("Max possibilities was calculated to be 0 for %s of %d chars\n",
+				wc_util_charset_tostring(charset), (int)nchars);
+		return -1;
+	}
 	WC_INFO("Max possibilities: %lu\n", (unsigned long)max_possibilities);
 	// copy the initial input
 	memset(&input, 0, sizeof(input));
-	for (idx = 0; idx < inlen; ++idx)
-		input.s[idx] = (cl_uchar)instr[idx];
+	for (idx = 0; idx < pfxlen; ++idx)
+		input.s[idx] = (cl_uchar)prefix[idx];
 	// convert md5sum text to a digest
 	memset(&digest, 0, sizeof(digest));
 	for (idx = 0; idx < 2 * MD5_DIGEST_LENGTH; idx += 2)
@@ -250,22 +269,23 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 		cl_ulong max_kernel_calls = 0;
 		const size_t localmem_per_kernel = 32; // local mem used per kernel call
 		// max tries allowed based on local memory availability
-		size_t max_ll_tries = dev->localmem_sz / localmem_per_kernel;
+		size_t parallel_tries = dev->localmem_sz / localmem_per_kernel;
 		cl_ulong kdx;
 		struct timeval tv1, tv2;
 		// if the max parallel tries < max workgroups then use the max parallel
 		// tries else use max workgroups
-		max_ll_tries = (max_ll_tries < dev->workgroup_sz) ? max_ll_tries :
+		parallel_tries = (parallel_tries < dev->workgroup_sz) ? parallel_tries :
 														dev->workgroup_sz;
-		if (max_possibilities <= max_ll_tries) {
+		if (max_possibilities <= parallel_tries) {
 			max_kernel_calls = 1;
-			max_ll_tries = max_possibilities;
+			parallel_tries = max_possibilities;
 		} else {
-			max_kernel_calls = (cl_ulong)(max_possibilities / max_ll_tries) +
-				((max_possibilities % max_ll_tries) ? 1 : 0);
+			// find the ceiling maximum number of kernel calls needed
+			max_kernel_calls = (cl_ulong)(max_possibilities / parallel_tries) +
+				((max_possibilities % parallel_tries) ? 1 : 0);
 		}
 		WC_INFO("For device[%u] Max tries: %lu Kernel calls: %lu\n", idx,
-				max_ll_tries, (unsigned long)max_kernel_calls);
+				parallel_tries, (unsigned long)max_kernel_calls);
 		wc_util_timeofday(&tv1);
 		// create the kernel program and the buffers
 		kernel = clCreateKernel(dev->program, "md5sumcheck8", &rc);
@@ -278,21 +298,23 @@ int wc_md5_finder(wc_runtime_t *wc, const char *md5sum, const char *instr)
 		// call. break if it worked else continue.
 		// cleanup memory and kernel code
 		//for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
-		for (kdx = 0; kdx < max_kernel_calls; kdx += 64) {
+		for (kdx = 0; kdx < max_kernel_calls; kdx += charset_sz) {
 			const cl_uint workdim = 1;
 			size_t local_work_size = 1;
-			size_t global_work_size = max_ll_tries;
-			cl_uint count = (cl_uint)max_ll_tries;
+			size_t global_work_size = parallel_tries;
+			cl_ulong stride = parallel_tries;
 			uint32_t argc = 0;
-			cl_ulong2 factor;
-			factor.s[0] = kdx;
-			factor.s[1] = (kdx + 64 < max_kernel_calls) ? (kdx + 64) :
-							max_kernel_calls;
+			cl_ulong2 index_range;
+			index_range.s[0] = kdx;
+			index_range.s[1] = ((kdx + charset_sz) < max_kernel_calls) ?
+							(kdx + charset_sz) : max_kernel_calls;
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar8), &input);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &digest);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &matches_mem);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &count);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong2), &factor);
+			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &charset);
+			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong), &stride);
+			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong2),
+					&index_range);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 			memset(&match, 0, sizeof(match));
 			rc = clEnqueueWriteBuffer(dev->cmdq, matches_mem, CL_FALSE, 0,
@@ -372,7 +394,8 @@ int main(int argc, char **argv)
 		WC_ERROR("Unable to compile the source code from %s\n",
 				args.cl_filename ? args.cl_filename : WC_MD5_CL);
 
-	rc = wc_md5_finder(wc, args.md5sum, args.prefix);
+	rc = wc_md5_checker(wc, args.md5sum, args.prefix, args.charset,
+			args.nchars);
 	if (rc < 0)
 		WC_ERROR("Unable to verify MD5 sums.\n");
 	wc_runtime_destroy(wc);

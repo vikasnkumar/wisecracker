@@ -36,6 +36,8 @@ typedef enum {
 /* provide a string name for the charset enum entry */
 WCDLL const char *wc_util_charset_tostring(wc_util_charset_t chs);
 
+WCDLL size_t wc_util_charset_size(wc_util_charset_t chs);
+
 /* load a full file into a character buffer */
 WCDLL int wc_util_glob_file(const char *filename, unsigned char **outdata,
 						size_t *outlen);

@@ -96,7 +96,23 @@ const char *wc_util_charset_tostring(wc_util_charset_t chs)
 	case WC_UTIL_CHARSET_DIGIT: return "digit";
 	case WC_UTIL_CHARSET_SPECIAL: return "special";
 	case WC_UTIL_CHARSET_ALNUMSPL: return "alnumspl";
-	default: return "unknown";
+	default:
+		WC_WARN("Invalid charset given.\n");
+		return "unknown";
+	}
+}
+
+size_t wc_util_charset_size(wc_util_charset_t chs)
+{
+	switch (chs) {
+	case WC_UTIL_CHARSET_ALPHA: return 52;
+	case WC_UTIL_CHARSET_DIGIT: return 10;
+	case WC_UTIL_CHARSET_ALNUM: return 62;
+	case WC_UTIL_CHARSET_SPECIAL: return 32;
+	case WC_UTIL_CHARSET_ALNUMSPL: return 94;
+	default:
+		WC_WARN("Invalid charset given.\n");
+		return 0;
 	}
 }
 
