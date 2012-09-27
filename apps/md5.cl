@@ -545,7 +545,7 @@ __kernel void wc_md5sum_check_8(uchar8 input, /* starting portion of the string 
 	__local uchar dig[16];
 	// load the given md5 digest into array only once.
 	vstore16(digest, 0, dig);
-	for (int j = idxrange.s0; j < idxrange.s1; ++j) {
+	for (ulong j = idxrange.s0; j < idxrange.s1; ++j) {
 		MD5_CTX ctx;
 		__local uchar out[16];
 		uchar buf[8]; // max allowed
