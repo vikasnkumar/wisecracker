@@ -274,8 +274,8 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		struct timeval tv1, tv2;
 		// if the max parallel tries < max workgroups then use the max parallel
 		// tries else use max workgroups
-		parallel_tries = (parallel_tries < dev->workgroup_sz) ? parallel_tries :
-														dev->workgroup_sz;
+		if ((parallel_tries > (dev->workgroup_sz * dev->compute_units)))
+			parallel_tries = (dev->workgroup_sz * dev->compute_units);
 		if (max_possibilities <= parallel_tries) {
 			max_kernel_calls = 1;
 			parallel_tries = max_possibilities;
@@ -305,13 +305,14 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			cl_ulong stride = parallel_tries;
 			uint32_t argc = 0;
 			cl_ulong2 index_range;
+			cl_uint charset_type = (cl_uint)charset;
 			index_range.s[0] = kdx;
 			index_range.s[1] = ((kdx + charset_sz) < max_kernel_calls) ?
 							(kdx + charset_sz) : max_kernel_calls;
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar8), &input);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &digest);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &matches_mem);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &charset);
+			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &charset_type);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong), &stride);
 			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong2),
 					&index_range);
