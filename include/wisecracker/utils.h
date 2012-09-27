@@ -36,6 +36,8 @@ typedef enum {
 /* provide a string name for the charset enum entry */
 WCDLL const char *wc_util_charset_tostring(wc_util_charset_t chs);
 
+WCDLL wc_util_charset_t wc_util_charset_fromstring(const char *str);
+
 #define WC_UTIL_CHARSET_ALPHA_SZ 52
 #define WC_UTIL_CHARSET_DIGIT_SZ 10
 #define WC_UTIL_CHARSET_ALNUM_SZ 62

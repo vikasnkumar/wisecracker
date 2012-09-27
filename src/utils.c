@@ -102,6 +102,25 @@ const char *wc_util_charset_tostring(wc_util_charset_t chs)
 	}
 }
 
+wc_util_charset_t wc_util_charset_fromstring(const char *str)
+{
+	if (WC_STRCMPI(str, "alnum") == 0) {
+		return WC_UTIL_CHARSET_ALNUM;
+	} else if (WC_STRCMPI(str, "alpha") == 0) {
+		return WC_UTIL_CHARSET_ALPHA;
+	} else if (WC_STRCMPI(str, "alnumspl") == 0) {
+		return WC_UTIL_CHARSET_ALNUMSPL;
+	} else if (WC_STRCMPI(str, "digit") == 0) {
+		return WC_UTIL_CHARSET_DIGIT;
+	} else if (WC_STRCMPI(str, "special") == 0) {
+		return WC_UTIL_CHARSET_SPECIAL;
+	} else {
+		WC_WARN("Unknown charset %s given. Using the default.\n",
+				str);
+	}
+	return WC_UTIL_CHARSET_ALNUM;
+}
+
 size_t wc_util_charset_size(wc_util_charset_t chs)
 {
 	switch (chs) {

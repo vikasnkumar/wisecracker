@@ -125,20 +125,7 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 			}
 			break;
 		case 'C':
-			if (WC_STRCMPI(optarg, "alnum") == 0) {
-				args->charset = WC_UTIL_CHARSET_ALNUM;
-			} else if (WC_STRCMPI(optarg, "alpha") == 0) {
-				args->charset = WC_UTIL_CHARSET_ALPHA;
-			} else if (WC_STRCMPI(optarg, "alnumspl") == 0) {
-				args->charset = WC_UTIL_CHARSET_ALNUMSPL;
-			} else if (WC_STRCMPI(optarg, "digit") == 0) {
-				args->charset = WC_UTIL_CHARSET_DIGIT;
-			} else if (WC_STRCMPI(optarg, "special") == 0) {
-				args->charset = WC_UTIL_CHARSET_SPECIAL;
-			} else {
-				WC_WARN("Unknown charset %s given. Using the default.\n",
-						optarg);
-			}
+			args->charset = wc_util_charset_fromstring(optarg);
 			break;
 		case 'N':
 			args->nchars = (uint8_t)strtol(optarg, NULL, 10);
@@ -290,8 +277,9 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		double ttinterval = -1.0;
 		// if the max parallel tries < max workgroups then use the max parallel
 		// tries else use max workgroups
-		if ((parallel_tries > (dev->workgroup_sz * dev->compute_units)))
-			parallel_tries = (dev->workgroup_sz * dev->compute_units);
+		if (parallel_tries > dev->workgroup_sz)
+			parallel_tries = dev->workgroup_sz;
+		parallel_tries *= dev->compute_units;
 		if (max_possibilities <= parallel_tries) {
 			max_kernel_calls = 1;
 			parallel_tries = max_possibilities;
@@ -302,13 +290,13 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		}
 		WC_INFO("For device[%u] Parallel tries: %lu Kernel calls: %lu\n", idx,
 				parallel_tries, (unsigned long)max_kernel_calls);
-		wc_util_timeofday(&tv1);
 		// create the kernel program and the buffers
 		kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 		matches_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
 				sizeof(cl_uchar16), NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
+		wc_util_timeofday(&tv1);
 		// invoke the kernel as many times as needed
 		// check the matched output to see if anything worked in each kernel
 		// call. break if it worked else continue.
