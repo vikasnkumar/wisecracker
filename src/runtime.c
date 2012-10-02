@@ -23,15 +23,16 @@
  */
 #include <wisecracker.h>
 
-static void CALLBACK wc_runtime_pfn_notify(const char *errinfo,
+static void CL_CALLBACK wc_runtime_pfn_notify(const char *errinfo,
 											const void *pvtinfo,
 											size_t cb, void *userdata)
 {
+//	wc_runtime_t *wc = (wc_runtime_t *)userdata;
 	WC_ERROR("OpenCL runtime returned error: %s\n", (errinfo) ? errinfo :
 			"unknown");
 }
 
-static int wc_runtime_platform_info(wc_device_t *dev)
+static int wc_runtime_platform_info(wc_platform_t *plat)
 {
 #undef LOCAL_PLATFORM_INFO
 #define LOCAL_PLATFORM_INFO(TYPE,VAR,PLID) \
@@ -56,24 +57,23 @@ do { \
     } \
 } while (0)
     int rc = -1;
-    if (!dev)
+    if (!plat)
         return -1;
     do {
         char buffer[1024]; 
-		cl_platform_id plid = dev->platform;
-        LOCAL_PLATFORM_INFO(CL_PLATFORM_PROFILE, dev->pl_profile, plid);
+        LOCAL_PLATFORM_INFO(CL_PLATFORM_PROFILE, plat->profile, plat->id);
         if (rc < 0)
             break;
-        LOCAL_PLATFORM_INFO(CL_PLATFORM_VERSION, dev->pl_version, plid);
+        LOCAL_PLATFORM_INFO(CL_PLATFORM_VERSION, plat->version, plat->id);
         if (rc < 0)
             break;
-        LOCAL_PLATFORM_INFO(CL_PLATFORM_NAME, dev->pl_name, plid);
+        LOCAL_PLATFORM_INFO(CL_PLATFORM_NAME, plat->name, plat->id);
         if (rc < 0)
             break;
-        LOCAL_PLATFORM_INFO(CL_PLATFORM_VENDOR, dev->pl_vendor, plid);
+        LOCAL_PLATFORM_INFO(CL_PLATFORM_VENDOR, plat->vendor, plat->id);
         if (rc < 0)
             break;
-        LOCAL_PLATFORM_INFO(CL_PLATFORM_EXTENSIONS, dev->pl_ext, plid);
+        LOCAL_PLATFORM_INFO(CL_PLATFORM_EXTENSIONS, plat->extension, plat->id);
         if (rc < 0)
             break;
     } while (0);
@@ -155,18 +155,15 @@ static int wc_runtime_device_info(wc_device_t *dev)
 wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 {
 	cl_int rc = CL_SUCCESS;
-	cl_platform_id *platforms = NULL;
-	cl_device_id *devices = NULL;
+	cl_platform_id *plids = NULL;
+	cl_device_id *devids = NULL;
 	wc_runtime_t *wc = NULL;
 	do {
 		cl_uint num = 0;
 		cl_uint idx = 0;
+		cl_uint total_devnum = 0;
+		cl_uint dev_idx = 0;
 		cl_device_type devtype = CL_DEVICE_TYPE_DEFAULT;
-		char platname[1024];
-		if (max_devices == 0) {
-			WC_WARN("Max devices parameter given as 0, using 1.\n");
-			max_devices = 1;
-		}
 		// first find the platform ids
 		rc = clGetPlatformIDs(0, NULL, &num);
 		WC_ERROR_OPENCL_BREAK(clGetPlatformIDs, rc);
@@ -174,21 +171,23 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 			WC_ERROR("No OpenCL platforms found.\n");
 			break;	
 		} else {
-			WC_INFO("Found %u OpenCL Devices.\n", num);
+			WC_INFO("Found %u OpenCL Platforms.\n", num);
 		}
-		platforms = WC_MALLOC(num * sizeof(*platforms));
-		if (!platforms) {
-			WC_ERROR_OUTOFMEMORY(sizeof(*platforms) * num);
+		plids = WC_MALLOC(num * sizeof(*plids));
+		if (!plids) {
+			WC_ERROR_OUTOFMEMORY(sizeof(*plids) * num);
 			break;
 		}
-		memset(platforms, 0, sizeof(*platforms) * num);
-		rc = clGetPlatformIDs(num, platforms, NULL);
+		memset(plids, 0, sizeof(*plids) * num);
+		rc = clGetPlatformIDs(num, plids, NULL);
 		WC_ERROR_OPENCL_BREAK(clGetPlatformIDs, rc);
 		// find the device that you want
 		switch (flag) {
 		case WC_DEVICE_CPU:
 			devtype = CL_DEVICE_TYPE_CPU;
 			WC_INFO("Picking only the CPU based devices.\n");
+			WC_DEBUG("Max devices for CPU has to be set to 1.\n");
+			max_devices = 1;
 			break;
 		case WC_DEVICE_GPU:
 			devtype = CL_DEVICE_TYPE_GPU;
@@ -209,6 +208,68 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 			break;
 		}
 		memset(wc, 0, sizeof(*wc));
+		wc->platforms = WC_MALLOC(sizeof(wc_platform_t) * num);
+		if (!wc->platforms) {
+			WC_ERROR_OUTOFMEMORY(sizeof(wc_platform_t) * num);
+			rc = -1;
+			break;
+		}
+		memset(wc->platforms, 0, sizeof(wc_platform_t) * num);
+		wc->platform_max = num;
+		// set up the platforms first
+		total_devnum = 0;
+		for (idx = 0; idx < num; ++idx) {
+			cl_uint devnum = 0;
+			wc_platform_t *plat = &wc->platforms[idx];
+			plat->id = plids[idx];
+			if ((rc = wc_runtime_platform_info(plat) < 0))
+				break;
+			// get the number of devices on this platform
+			// if the device type doesn't match then obviously we ignore this
+			// platform
+			rc = clGetDeviceIDs(plat->id, devtype, 0, NULL, &devnum);
+			if (rc == CL_DEVICE_NOT_FOUND || devnum == 0) {
+				WC_INFO("No devices found for platform %s\n", plat->name);
+				plat->max_devices = 0;
+				continue;
+			} else {
+				WC_ERROR_OPENCL_BREAK(clGetDeviceIDs, rc);
+				WC_INFO("Found %u devices for platform %s\n", devnum,
+						plat->name);
+				total_devnum += devnum;
+				plat->max_devices = devnum;
+				plat->dev_indices = WC_MALLOC(sizeof(*plat->dev_indices) *
+												plat->max_devices);
+				if (!plat->dev_indices) {
+					WC_ERROR_OUTOFMEMORY(sizeof(*plat->dev_indices) *
+										plat->max_devices);
+					rc = -1;
+					break;
+				}
+				memset(plat->dev_indices, 0, sizeof(*plat->dev_indices) *
+										plat->max_devices);
+			}
+		}
+		if (rc < 0)
+			break;
+		if (max_devices == 0) {
+			max_devices = total_devnum;
+			WC_INFO("Using the maximum %u devices.\n", max_devices);
+		}
+		if (max_devices > total_devnum) {
+			WC_WARN("Requested %u devices but only %u exist. Adjusting.\n",
+					max_devices, total_devnum);
+			max_devices = total_devnum;
+		}
+		// we collect the device IDs for all platforms into this array
+		// we reuse the array per platform, and this array is just large enough
+		// to hold all devices but is not used in that way
+		devids = WC_MALLOC(sizeof(cl_device_id) * total_devnum);
+		if (!devids) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_device_id) * total_devnum);
+			rc = -1;
+		}
+		// now allocate the device structures
 		wc->devices = WC_MALLOC(sizeof(wc_device_t) * max_devices);
 		if (!wc->devices) {
 			WC_ERROR_OUTOFMEMORY(sizeof(wc_device_t) * max_devices);
@@ -217,69 +278,62 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 		}
 		memset(wc->devices, 0, sizeof(wc_device_t) * max_devices);
 		wc->device_max = max_devices;
-		wc->device_index = 0;
-		devices = WC_MALLOC(sizeof(cl_device_id) * max_devices);
-		if (!devices) {
-			WC_ERROR_OUTOFMEMORY(sizeof(cl_device_id) * max_devices);
-			rc = -1;
-		}
-		for (idx = 0; idx < num && wc->device_index < wc->device_max; ++idx) {
+		dev_idx = 0;
+		for (idx = 0; idx < wc->platform_max; ++idx) {
 			cl_uint devnum = 0;
 			cl_uint jdx = 0;
-			size_t platnamesz = sizeof(platname);
-			memset(platname, 0, platnamesz);
-			rc = clGetPlatformInfo(platforms[idx], CL_PLATFORM_NAME, platnamesz,
-					platname, &platnamesz);
-			WC_ERROR_OPENCL_BREAK(clGetPlatformInfo, rc);
-			rc = clGetDeviceIDs(platforms[idx], devtype, 0, NULL, &devnum);
-			if (rc == CL_DEVICE_NOT_FOUND || devnum == 0) {
-				WC_INFO("No devices found for platform %s\n", platname);
+			cl_context_properties props[3];
+			wc_platform_t *plat = &wc->platforms[idx];
+			// let's reuse the previously stored value
+			if (plat->max_devices == 0)
 				continue;
-			} else {
-				WC_ERROR_OPENCL_BREAK(clGetDeviceIDs, rc);
-				WC_INFO("Found %u devices for platform %s\n", devnum, platname);
-			}
-			// find only the number of devices needed
-			if (devnum > (wc->device_max - wc->device_index))
-				devnum = (wc->device_max - wc->device_index);
+			devnum = plat->max_devices;
+			// we check if the number of devices requested has been hit or not
+			if (devnum > (wc->device_max - dev_idx))
+				devnum = wc->device_max - dev_idx;
 			if (devnum == 0)
 				break;
-			memset(devices, 0, sizeof(cl_device_id) * max_devices);
+			memset(devids, 0, sizeof(cl_device_id) * total_devnum);
 			// we only want devnum devices
-			rc = clGetDeviceIDs(platforms[idx], devtype, devnum, devices,
-								&devnum);
+			rc = clGetDeviceIDs(plids[idx], devtype, devnum, devids, &devnum);
 			WC_ERROR_OPENCL_BREAK(clGetDeviceIDs, rc);
-			for (jdx = 0; jdx < devnum; ++jdx) {
-				cl_context_properties props[3];
-				wc_device_t *dev = &wc->devices[wc->device_index];
+			// create context for all devices for this platform
+			// NOTE: we cannot create multiple platform context since vendors
+			// except AMD as of 2nd Oct 2012 don't support that.
+			props[0] = CL_CONTEXT_PLATFORM;
+			props[1] = (cl_context_properties)plat->id;
+			props[2] = 0;
+			plat->context = clCreateContext(props, devnum, devids,
+								wc_runtime_pfn_notify, (void *)wc, &rc);
+			WC_ERROR_OPENCL_BREAK(clCreateContext, rc);
+			// store the device information into its structure
+			plat->used_devices = 0; // jdx need not be equal to used_devices
+			for (jdx = 0; jdx < devnum && dev_idx < wc->device_max &&
+						plat->used_devices < plat->max_devices; ++jdx) {
+				wc_device_t *dev = &wc->devices[dev_idx];
 				memset(dev, 0, sizeof(*dev));
-				dev->id = devices[jdx];
-				dev->platform = platforms[idx];
+				dev->id = devids[jdx];
+				dev->pl_index = idx;
 				dev->type = devtype;
 				if (wc_runtime_device_info(dev) < 0)
 					continue;
-				wc_runtime_platform_info(dev);
-				props[0] = CL_CONTEXT_PLATFORM;
-				props[1] = (cl_context_properties)dev->platform;
-				props[2] = 0;
-				dev->context = clCreateContext(props, 1, &dev->id,
-								wc_runtime_pfn_notify, NULL, &rc);
-				WC_ERROR_OPENCL_BREAK(clCreateContext, rc);
-				dev->cmdq = clCreateCommandQueue(dev->context, dev->id,
+				// we create a command queue per device
+				dev->cmdq = clCreateCommandQueue(plat->context, dev->id,
 						CL_QUEUE_PROFILING_ENABLE, &rc);
 				WC_ERROR_OPENCL_BREAK(clCreateCommandQueue, rc);
-				wc->device_index++;
+				plat->dev_indices[plat->used_devices++] = dev_idx;
+				dev_idx++;
 			}
 		}
 		if (rc != CL_SUCCESS)
 			break;
-		if (wc->device_index == 0) {
+		if (dev_idx == 0) {
 			WC_ERROR("Unable to successfully find %u devices.\n", max_devices);
 			rc = -1;
 		}
 	} while (0);
-	WC_FREE(platforms);
-	WC_FREE(devices);
+	WC_FREE(plids);
+	WC_FREE(devids);
 	if (rc != CL_SUCCESS && wc) {
 		wc_runtime_destroy(wc);
 		wc = NULL;
@@ -290,8 +344,8 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 void wc_runtime_destroy(wc_runtime_t *wc)
 {
 	if (wc) {
-		uint32_t idx;
-		for (idx = 0; idx < wc->device_index; ++idx) {
+		cl_uint idx;
+		for (idx = 0; idx < wc->device_max; ++idx) {
 			cl_int rc = CL_SUCCESS;
 			if (wc->devices[idx].cmdq) {
 				rc = clFinish(wc->devices[idx].cmdq);
@@ -306,19 +360,23 @@ void wc_runtime_destroy(wc_runtime_t *wc)
 				if (rc != CL_SUCCESS)
 					WC_ERROR_OPENCL(clReleaseProgram, rc);
 			}
-			if (wc->devices[idx].context) {
-				rc = clReleaseContext(wc->devices[idx].context);
+			WC_FREE(wc->devices[idx].workitem_sz);
+		}
+		for (idx = 0; idx < wc->platform_max; ++idx) {
+			if (wc->platforms[idx].context) {
+				cl_int rc = clReleaseContext(wc->platforms[idx].context);
 				if (rc != CL_SUCCESS)
 					WC_ERROR_OPENCL(clReleaseContext, rc);
 			}
-			WC_FREE(wc->devices[idx].workitem_sz);
-			WC_FREE(wc->devices[idx].pl_name);
-			WC_FREE(wc->devices[idx].pl_ext);
-			WC_FREE(wc->devices[idx].pl_version);
-			WC_FREE(wc->devices[idx].pl_vendor);
-			WC_FREE(wc->devices[idx].pl_profile);
+			WC_FREE(wc->platforms[idx].name);
+			WC_FREE(wc->platforms[idx].extension);
+			WC_FREE(wc->platforms[idx].version);
+			WC_FREE(wc->platforms[idx].vendor);
+			WC_FREE(wc->platforms[idx].profile);
+			WC_FREE(wc->platforms[idx].dev_indices);
 		}
 		WC_FREE(wc->devices);
+		WC_FREE(wc->platforms);
 		memset(wc, 0, sizeof(*wc));
 		WC_FREE(wc);
 	}
@@ -326,11 +384,11 @@ void wc_runtime_destroy(wc_runtime_t *wc)
 
 void wc_runtime_dump(const wc_runtime_t *wc)
 {
-	uint32_t idx;
+	cl_uint idx;
 	if (!wc)
 		return;
 #undef LOCAL_PRINT_UNITS
-#define LOCAL_PRINT_UNITS(STR,A) \
+#define LOCAL_PRINT_UNITS(STR,JDX,A) \
 do { \
 	char *unit_str = NULL; \
 	size_t val = 0; \
@@ -344,34 +402,52 @@ do { \
 		unit_str = "bytes"; \
 		val = (A); \
 	} \
-	WC_INFO(STR "%lu %s\n", val, unit_str); \
+	WC_INFO(STR "%lu %s\n", (JDX), val, unit_str); \
 } while (0)
 
-	WC_INFO("No. of devices: %u\n", wc->device_index);
-	for (idx = 0; idx < wc->device_index; ++idx) {
-		const wc_device_t *dev = &wc->devices[idx];
-		WC_INFO("Device Platform Name: %s\n", (dev->pl_name ?
-					dev->pl_name : "unknown"));
-		WC_INFO("Device Platform Version: %s\n", (dev->pl_version ?
-					dev->pl_version : "unknown"));
-		WC_INFO("Device Platform Vendor: %s\n", (dev->pl_vendor ?
-					dev->pl_vendor : "unknown"));
-		WC_INFO("Device Platform Profile: %s\n", (dev->pl_profile ?
-					dev->pl_profile : "unknown"));
-		WC_INFO("Device Platform Extensions: %s\n", (dev->pl_ext ?
-					dev->pl_ext : "unknown"));
-		WC_INFO("Device Compute Units: %u\n", dev->compute_units);
-		WC_INFO("Device Workgroup size: %lu\n", dev->workgroup_sz);
-		WC_INFO("Device Work item dimension: %u\n", dev->workitem_dim);
-		if (dev->workitem_sz) {
-			cl_uint jdx;
-			for (jdx = 0; jdx < dev->workitem_dim; ++jdx)
-				WC_INFO("Device Workitem[%u]: %lu\n", jdx, dev->workitem_sz[jdx]);
+	WC_INFO("Total No. of platforms: %u\n", wc->platform_max);
+	WC_INFO("Total No. of devices: %u\n", wc->device_max);
+	for (idx = 0; idx < wc->platform_max; ++idx) {
+		cl_uint jdx;
+		const wc_platform_t *plat = &wc->platforms[idx];
+		WC_INFO("Platform Name: %s\n", (plat->name ?
+					plat->name : "unknown"));
+		WC_INFO("Platform Version: %s\n", (plat->version ?
+					plat->version : "unknown"));
+		WC_INFO("Platform Vendor: %s\n", (plat->vendor ?
+					plat->vendor : "unknown"));
+		WC_INFO("Platform Profile: %s\n", (plat->profile ?
+					plat->profile : "unknown"));
+		WC_INFO("Platform Extensions: %s\n", (plat->extension ?
+					plat->extension : "unknown"));
+		WC_INFO("Platform Max Device Count: %u\n", plat->max_devices);
+		for (jdx = 0; jdx < plat->used_devices; ++jdx) {
+			cl_uint devidx = plat->dev_indices[jdx];
+			const wc_device_t *dev = NULL;
+			if (devidx >= wc->device_max)
+				continue;
+			dev = &wc->devices[devidx];
+			WC_INFO("Device[%u] Compute Units: %u\n", devidx,
+					dev->compute_units);
+			WC_INFO("Device[%u] Workgroup size: %lu\n", devidx,
+					dev->workgroup_sz);
+			WC_INFO("Device[%u] Work item dimension: %u\n", devidx,
+					dev->workitem_dim);
+			if (dev->workitem_sz) {
+				cl_uint kdx;
+				for (kdx = 0; kdx < dev->workitem_dim; ++kdx)
+					WC_INFO("Device[%u] Workitem[%u]: %lu\n", devidx, kdx,
+							dev->workitem_sz[kdx]);
+			}
+			LOCAL_PRINT_UNITS("Device[%u] Max alloc memory: ", devidx,
+								dev->allocmem_sz);
+			LOCAL_PRINT_UNITS("Device[%u] Max global memory: ", devidx,
+								dev->globalmem_sz);
+			LOCAL_PRINT_UNITS("Device[%u] Max constant memory: ", devidx,
+								dev->constmem_sz);
+			LOCAL_PRINT_UNITS("Device[%u] Max local memory: ", devidx,
+								dev->localmem_sz);
 		}
-		LOCAL_PRINT_UNITS("Device Max alloc memory: ", dev->allocmem_sz);
-		LOCAL_PRINT_UNITS("Device Max global memory: ", dev->globalmem_sz);
-		LOCAL_PRINT_UNITS("Device Max constant memory: ", dev->constmem_sz);
-		LOCAL_PRINT_UNITS("Device Max local memory: ", dev->localmem_sz);
 	}
 #undef LOCAL_PRINT_UNITS
 }
@@ -406,16 +482,19 @@ static void wc_runtime_program_buildlog(wc_device_t *dev)
 	}
 }
 
+//XXX: we could in the future have buildopts per device type
 int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 							const char *buildopts)
 {
 	cl_int rc = CL_SUCCESS;
 	char *build_options = NULL;
-	uint32_t idx;
-	if (!wc || !src || len == 0)
+	cl_uint idx;
+	if (!src || len == 0) {
+		WC_DEBUG("invalid function parameters.\n");
 		return -1;
-	if (wc->device_index < 1) {
-		WC_ERROR("No OpenCL devices found.\n");
+	}
+	if (!wc_runtime_is_usable(wc)) {
+		WC_ERROR("wisecracker runtime is not usable.\n");
 		return -1;
 	}
 	if (buildopts) {
@@ -440,18 +519,28 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 		}
 	}
 	WC_INFO("Using build options: %s\n", build_options);
-	for (idx = 0; idx < wc->device_index; ++idx) {
+	for (idx = 0; idx < wc->device_max; ++idx) {
 		cl_program program;
 		struct timeval tv1, tv2;
 		wc_device_t *dev = &wc->devices[idx];
+		wc_platform_t *plat = NULL;
 		if (dev->program) {
 			int err = clReleaseProgram(dev->program);
 			if (err != CL_SUCCESS)
 				WC_ERROR_OPENCL(clReleaseProgram, err);
+			WC_DEBUG("Releasing an earlier program.\n");
 		}
 		dev->program = (cl_program)0;
+		if (dev->pl_index < wc->platform_max) {
+			plat = &wc->platforms[dev->pl_index];
+		} else {
+			WC_ERROR("Device platform reference is %u > maximum %u\n",
+					dev->pl_index, wc->platform_max);
+			rc = -1;
+			break;
+		}
 		wc_util_timeofday(&tv1);
-		program = clCreateProgramWithSource(dev->context, 1, &src, &len, &rc);
+		program = clCreateProgramWithSource(plat->context, 1, &src, &len, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateProgramWithSource, rc);
 		dev->program = program;
 		rc = clBuildProgram(dev->program, 1, &dev->id, build_options,
@@ -466,7 +555,7 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 		}
 		wc_util_timeofday(&tv2);
 		WC_INFO("Time taken to compile for device(%s) is %lf seconds.\n",
-				dev->pl_name, WC_TIME_TAKEN(tv1, tv2));
+				plat->name, WC_TIME_TAKEN(tv1, tv2));
 	}
 	WC_FREE(build_options);
 	return (rc == CL_SUCCESS) ? 0 : -1;
@@ -474,5 +563,6 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 
 uint8_t wc_runtime_is_usable(const wc_runtime_t *wc)
 {
-	return (wc && wc->devices && wc->device_index > 0) ? 1 : 0;
+	return (wc && wc->devices && wc->device_max > 0 && wc->platforms &&
+			wc->platform_max > 0) ? 1 : 0;
 }

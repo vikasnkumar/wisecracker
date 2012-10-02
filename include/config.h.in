@@ -156,6 +156,14 @@ EXTERN_C_BEGIN
 	#else
 		#include <CL/opencl.h>
 	#endif
+	// handle OpenCL 1.0
+	#ifndef CL_CALLBACK
+		#ifdef WIN32
+			#define CL_CALLBACK CALLBACK
+		#else
+			#define CL_CALLBACK
+		#endif
+	#endif
 #endif
 
 #cmakedefine WC_ASSERT_H

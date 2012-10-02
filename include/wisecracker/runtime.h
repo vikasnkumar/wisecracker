@@ -26,32 +26,42 @@
 
 EXTERN_C_BEGIN
 
-typedef struct wc_device_t__ wc_device_t;
+typedef struct {
+		cl_platform_id id;
+		char *name;
+		char *extension;
+		char *version;
+		char *profile;
+		char *vendor;
+		cl_uint *dev_indices; /* reverse index into the device array */
+		cl_uint used_devices; /* number of devices used */
+		cl_uint max_devices; /* max number of devices for this platform */
+		cl_context context; /* a context is per platform */
+} wc_platform_t;
 
 typedef struct {
-	struct wc_device_t__ {
-		cl_device_id id;
-		cl_platform_id platform;
-		cl_device_type type;
-		cl_uint compute_units;
-		size_t workgroup_sz;
-		cl_uint workitem_dim;
-		size_t *workitem_sz;
-		cl_ulong allocmem_sz;
-		cl_ulong globalmem_sz;
-		cl_ulong constmem_sz;
-		cl_ulong localmem_sz;
-		char *pl_name;
-		char *pl_ext;
-		char *pl_version;
-		char *pl_profile;
-		char *pl_vendor;
-		cl_context context;
-		cl_command_queue cmdq;
-		cl_program program;
-	} *devices;
-	uint32_t device_index;
-	uint32_t device_max;
+	cl_device_id id;
+	cl_uint pl_index; /* index into the platforms array */
+	cl_device_type type;
+	cl_uint compute_units;
+	size_t workgroup_sz;
+	cl_uint workitem_dim;
+	size_t *workitem_sz;
+	cl_ulong allocmem_sz;
+	cl_ulong globalmem_sz;
+	cl_ulong constmem_sz;
+	cl_ulong localmem_sz;
+	cl_command_queue cmdq;
+	cl_program program;
+} wc_device_t;
+
+typedef struct {
+	/*  an array of platforms */
+	wc_platform_t *platforms;
+	cl_uint platform_max;
+	/* an array of devices */
+	wc_device_t *devices;
+	cl_uint device_max;
 } wc_runtime_t;
 
 

@@ -51,7 +51,7 @@ int wc_arguments_usage(const char *app)
 	printf("\nOPTIONS are as follows:\n");
 	printf("\t-h\t\tThis help message\n");
 	printf("\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
-	printf("\t-m <value>\tMaximum devices to use. Default is 1\n");
+	printf("\t-m <value>\tMaximum devices to use, 0 for all. Default is 0\n");
 	printf("\t-c\t\tUse CPU only if available. Default any.\n");
 	printf("\t-g\t\tUse GPU only if available. Default any.\n");
 	printf("\t-w <value>\tMaximum items for parallel execution for test run. "
@@ -67,7 +67,7 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 	if (!argv || !args)
 		return -1;
 	args->cl_filename = NULL;
-	args->max_devices = 1;
+	args->max_devices = 0;
 	args->device_flag = WC_DEVICE_ANY;
 	args->workitems = 16;
 
@@ -108,7 +108,10 @@ void wc_arguments_dump(const struct wc_arguments *args)
 	if (args) {
 		if (args->cl_filename)
 			WC_INFO("OpenCL source code file: %s\n", args->cl_filename);
-		WC_INFO("Max Devices to use: %u\n", args->max_devices);
+		if (args->max_devices)
+			WC_INFO("Max Devices to use: %u\n", args->max_devices);
+		else
+			WC_INFO("Max Devices to use: all available\n");
 		if (args->device_flag == WC_DEVICE_CPU)
 			WC_INFO("CPU only\n");
 		if (args->device_flag == WC_DEVICE_GPU)
@@ -160,7 +163,8 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 	uint32_t idx;
 	if (!wc_runtime_is_usable(wc))
 		return -1;
-	for (idx = 0; idx < wc->device_index; ++idx) {
+	WC_INFO("We test the program per device\n");
+	for (idx = 0; idx < wc->device_max; ++idx) {
 		cl_mem input_mem = (cl_mem)0;
 		cl_mem inputlen_mem = (cl_mem)0;
 		cl_mem digest_mem = (cl_mem)0;
@@ -201,16 +205,23 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		}
 		do {
 			struct timeval tv1, tv2;
+			wc_platform_t *plat = NULL;
+			if (dev->pl_index < wc->platform_max) {
+				plat = &wc->platforms[dev->pl_index];
+			} else {
+				rc = -1;
+				break;
+			}
 			wc_util_timeofday(&tv1);
 			kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
-			input_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY, ilen,
+			input_mem = clCreateBuffer(plat->context, CL_MEM_READ_ONLY, ilen,
 										NULL, &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-			inputlen_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
+			inputlen_mem = clCreateBuffer(plat->context, CL_MEM_READ_ONLY,
 					sizeof(cl_uint) * parallelsz, NULL, &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-			digest_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
+			digest_mem = clCreateBuffer(plat->context, CL_MEM_READ_WRITE,
 									sizeof(cl_uchar16) * parallelsz, NULL, &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 			argc = 0;

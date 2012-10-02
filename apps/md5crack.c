@@ -50,7 +50,7 @@ int wc_arguments_usage(const char *app)
 	printf("\nOPTIONS are as follows:\n");
 	printf("\n\t-h\t\tThis help message\n");
 	printf("\n\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
-	printf("\n\t-m <value>\tMaximum devices to use. Default is 1\n");
+	printf("\n\t-m <value>\tMaximum devices to use, 0 (default) for all.\n");
 	printf("\n\t-c\t\tUse CPU only if available. Default any.\n");
 	printf("\n\t-g\t\tUse GPU only if available. Default any.\n");
 	printf("\n\t-N <number>\tLength of string to look for. Default is 8.\n");
@@ -80,7 +80,7 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 	if (!argv || !args)
 		return -1;
 	args->cl_filename = NULL;
-	args->max_devices = 1;
+	args->max_devices = 0;
 	args->device_flag = WC_DEVICE_ANY;
 	args->charset = WC_UTIL_CHARSET_ALNUM;
 	args->nchars = 8;
@@ -158,7 +158,10 @@ void wc_arguments_dump(const struct wc_arguments *args)
 	if (args) {
 		if (args->cl_filename)
 			WC_INFO("OpenCL source code file: %s\n", args->cl_filename);
-		WC_INFO("Max Devices to use: %u\n", args->max_devices);
+		if (args->max_devices)
+			WC_INFO("Max Devices to use: %u\n", args->max_devices);
+		else
+			WC_INFO("Max Devices to use: all available\n");
 		if (args->device_flag == WC_DEVICE_CPU)
 			WC_INFO("CPU only\n");
 		if (args->device_flag == WC_DEVICE_GPU)
@@ -267,6 +270,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		cl_mem matches_mem = (cl_mem)0;
 		cl_uchar16 match;
 		wc_device_t *dev = &wc->devices[idx];
+		wc_platform_t *plat = NULL;
 		cl_ulong max_kernel_calls = 0;
 		const size_t localmem_per_kernel = 32; // local mem used per kernel call
 		// max tries allowed based on local memory availability
@@ -275,6 +279,11 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		struct timeval tv1, tv2;
 		float progress;
 		double ttinterval = -1.0;
+		if (dev->pl_index >= wc->platform_max) {
+			WC_ERROR("Invalid platform index for device.\n");
+			break;
+		}
+		plat = &wc->platforms[dev->pl_index];
 		// if the max parallel tries < max workgroups then use the max parallel
 		// tries else use max workgroups
 		if (parallel_tries > dev->workgroup_sz)
@@ -293,7 +302,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		// create the kernel program and the buffers
 		kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
-		matches_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
+		matches_mem = clCreateBuffer(plat->context, CL_MEM_READ_WRITE,
 				sizeof(cl_uchar16), NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 		wc_util_timeofday(&tv1);
