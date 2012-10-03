@@ -224,7 +224,7 @@ char *wc_md5_create_buildopts(uint8_t nchars)
 }
 
 int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
-		wc_util_charset_t charset, uint8_t nchars)
+		wc_util_charset_t charset, const uint8_t nchars)
 {
 	cl_int rc = CL_SUCCESS;
 	uint32_t idx;
@@ -232,6 +232,8 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 	cl_uchar16 input;
 	cl_uchar16 digest;
 	size_t pfxlen = 0;
+	uint8_t zchars = 0;
+
 	cl_ulong charset_sz = wc_util_charset_size(charset);
 	if (!md5sum || !wc_runtime_is_usable(wc) || (nchars < 1) || (nchars >= 16))
 		return -1;
@@ -243,11 +245,11 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				(int)nchars);
 		return -1;
 	}
-	nchars -= (uint8_t)pfxlen;
-	max_possibilities = wc_md5_possibilities(charset, nchars);
+	zchars = nchars - (uint8_t)pfxlen;
+	max_possibilities = wc_md5_possibilities(charset, zchars);
 	if (max_possibilities == 0) {
 		WC_WARN("Max possibilities was calculated to be 0 for %s of %d chars\n",
-				wc_util_charset_tostring(charset), (int)nchars);
+				wc_util_charset_tostring(charset), (int)zchars);
 		return -1;
 	}
 	WC_INFO("Max possibilities: %lu\n", (unsigned long)max_possibilities);
@@ -349,7 +351,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				wc_util_timeofday(&tv2);
 				WC_INFO("Found match in %luth kernel call: ",
 						(unsigned long)kdx);
-				for (l = 0; l < 8; ++l)
+				for (l = 0; l < nchars; ++l)
 					WC_NULL("%c", match.s[l]);
 				WC_NULL("\n");
 				WC_INFO("Time taken for finding match: %lfs\n",
