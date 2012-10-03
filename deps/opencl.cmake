@@ -40,7 +40,8 @@ else (APPLE)
 		${OPENCL_ROOT}/common/include
 		${OPENCL_ROOT}/common/inc
 		)
-	set(OPENCL_LDFLAGS ${OPENCL_ROOT}/lib ${OPENCL_ROOT}/common/lib)
+	set(OPENCL_LDFLAGS ${OPENCL_ROOT}/lib ${OPENCL_ROOT}/lib64
+		${OPENCL_ROOT}/common/lib)
 	set(OPENCL_LIBS OpenCL)
 
 	set(CMAKE_REQUIRED_INCLUDES_SAVE ${CMAKE_REQUIRED_INCLUDES})
@@ -55,5 +56,4 @@ else (APPLE)
 		message(FATAL_ERROR "OpenCL is not found. Please set OPENCL_ROOT variable "
 			"to point correctly to the OpenCL installation folder.")
 	endif (WC_OPENCL_H)
-
 endif (APPLE)

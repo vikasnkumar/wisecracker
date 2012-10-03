@@ -156,13 +156,8 @@ EXTERN_C_BEGIN
 	#else
 		#include <CL/opencl.h>
 	#endif
-	// handle OpenCL 1.0
-	#ifndef CL_CALLBACK
-		#ifdef WIN32
-			#define CL_CALLBACK CALLBACK
-		#else
-			#define CL_CALLBACK
-		#endif
+	#ifndef CL_VERSION_1_1
+		#error "This code will only compile with OpenCL 1.1 or higher."
 	#endif
 #endif
 
