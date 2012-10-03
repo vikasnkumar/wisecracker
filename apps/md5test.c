@@ -163,39 +163,39 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 	uint32_t idx;
 	cl_uint ilen = 0;
 	cl_uint l_bufsz = 0;
+	cl_uchar *input = NULL;
+	cl_uint *input_len = NULL;
+	cl_uchar16 *digest = NULL;
 	if (!wc_runtime_is_usable(wc))
 		return -1;
+	// initialize the variables
 	ilen = maxblocksz * parallelsz;
 	l_bufsz = ilen;
-	WC_INFO("We test the program per device\n");
+	input = WC_MALLOC(ilen);
+	assert(input != NULL);
+	input_len = WC_MALLOC(sizeof(*input_len) * parallelsz);
+	assert(input_len != NULL);
+	memset(input, 0, ilen);
+	memset(input_len, 0, sizeof(*input_len) * parallelsz);
+	srand((int)time(NULL));
+	// randomly fill the buffers
+	for (idx = 0; idx < parallelsz; ++idx) {
+		uint32_t kdx;
+		input_len[idx] = maxblocksz;
+		for (kdx = 0; kdx < input_len[idx]; ++kdx) {
+			input[kdx + idx * maxblocksz] = (cl_uchar)(rand() & 0xFF);
+		}
+	}
+	digest = WC_MALLOC(sizeof(cl_uchar16) * parallelsz);
+	assert(digest != NULL);
+	WC_INFO("We test the program per platform\n");
 	for (idx = 0; idx < wc->device_max; ++idx) {
 		cl_mem input_mem = (cl_mem)0;
 		cl_mem inputlen_mem = (cl_mem)0;
 		cl_mem digest_mem = (cl_mem)0;
-		cl_uchar *input = NULL;
-		cl_uint *input_len = NULL;
-		cl_uchar16 *digest = NULL;
 		cl_kernel kernel = (cl_kernel)0;
-		uint32_t jdx, argc;
 		wc_device_t *dev = &wc->devices[idx];
 
-		input = WC_MALLOC(ilen);
-		assert(input != NULL);
-		input_len = WC_MALLOC(sizeof(*input_len) * parallelsz);
-		assert(input_len != NULL);
-		memset(input, 0, ilen);
-		memset(input_len, 0, sizeof(*input_len) * parallelsz);
-		srand((int)time(NULL));
-		// randomly fill the buffers
-		for (jdx = 0; jdx < parallelsz; ++jdx) {
-			uint32_t kdx;
-			input_len[jdx] = maxblocksz;
-			for (kdx = 0; kdx < input_len[jdx]; ++kdx) {
-				input[kdx + jdx * maxblocksz] = (cl_uchar)(rand() & 0xFF);
-			}
-		}
-		digest = WC_MALLOC(sizeof(cl_uchar16) * parallelsz);
-		assert(digest != NULL);
 		memset(digest, 0, sizeof(cl_uchar16) * parallelsz);
 		if (l_bufsz >= dev->localmem_sz) {
 			WC_INFO("Size of local buffer: %u\n", l_bufsz);
@@ -206,6 +206,7 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		do {
 			struct timeval tv1, tv2;
 			wc_platform_t *plat = NULL;
+			uint32_t argc;
 			if (dev->pl_index < wc->platform_max) {
 				plat = &wc->platforms[dev->pl_index];
 			} else {
@@ -257,6 +258,7 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		if (digest_mem)
 			rc |= clReleaseMemObject(digest_mem);
 		if (rc == CL_SUCCESS) {
+			uint32_t jdx;
 			for (jdx = 0; jdx < parallelsz; ++jdx) {
 				cl_uchar md[MD5_DIGEST_LENGTH];
 				memset(md, 0, sizeof(md));
@@ -266,11 +268,10 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 				}
 			}
 		}
-		WC_FREE(input);
-		WC_FREE(input_len);
-		WC_FREE(digest);
 	}
-
+	WC_FREE(input);
+	WC_FREE(input_len);
+	WC_FREE(digest);
 	return (rc == CL_SUCCESS) ? 0 : -1;
 }
 
