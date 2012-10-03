@@ -161,8 +161,12 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 	size_t local_work_size = 1;
 	size_t global_work_size = parallelsz;
 	uint32_t idx;
+	cl_uint ilen = 0;
+	cl_uint l_bufsz = 0;
 	if (!wc_runtime_is_usable(wc))
 		return -1;
+	ilen = maxblocksz * parallelsz;
+	l_bufsz = ilen;
 	WC_INFO("We test the program per device\n");
 	for (idx = 0; idx < wc->device_max; ++idx) {
 		cl_mem input_mem = (cl_mem)0;
@@ -173,11 +177,8 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		cl_uchar16 *digest = NULL;
 		cl_kernel kernel = (cl_kernel)0;
 		uint32_t jdx, argc;
-		cl_uint l_bufsz = 0;
-		cl_uint ilen = 0;
 		wc_device_t *dev = &wc->devices[idx];
 
-		ilen = maxblocksz * parallelsz;
 		input = WC_MALLOC(ilen);
 		assert(input != NULL);
 		input_len = WC_MALLOC(sizeof(*input_len) * parallelsz);
@@ -196,7 +197,6 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 		digest = WC_MALLOC(sizeof(cl_uchar16) * parallelsz);
 		assert(digest != NULL);
 		memset(digest, 0, sizeof(cl_uchar16) * parallelsz);
-		l_bufsz = ilen;
 		if (l_bufsz >= dev->localmem_sz) {
 			WC_INFO("Size of local buffer: %u\n", l_bufsz);
 			WC_ERROR("Local buffer max limit reached.\n");
@@ -213,7 +213,7 @@ int wc_md5_testrun(wc_runtime_t *wc, cl_uint parallelsz)
 				break;
 			}
 			wc_util_timeofday(&tv1);
-			kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
+			kernel = clCreateKernel(plat->program, wc_md5_cl_kernel, &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 			input_mem = clCreateBuffer(plat->context, CL_MEM_READ_ONLY, ilen,
 										NULL, &rc);
@@ -311,21 +311,27 @@ int main(int argc, char **argv)
 	wc = wc_runtime_create(args.device_flag, args.max_devices);
 	assert(wc != NULL);
 	wc_runtime_dump(wc);
-	
-	rc = wc_runtime_program_load(wc, (const char *)code, codelen, NULL);
-	if (rc < 0)
-		WC_ERROR("Unable to compile the source code from %s\n",
-				args.cl_filename ? args.cl_filename : WC_MD5_CL);
 
-	rc = wc_md5_testrun(wc, args.workitems);
-	if (rc < 0) {
-		WC_ERROR("Unable to execute the MD5 code.\n");
-	} else {
-		WC_INFO("Test run sucessful.\n");
-	}
+	do {
+		rc = wc_runtime_program_load(wc, (const char *)code, codelen, NULL);
+		if (rc < 0) {
+			WC_ERROR("Unable to compile the source code from %s\n",
+					args.cl_filename ? args.cl_filename : WC_MD5_CL);
+			break;
+		}
+		rc = wc_md5_testrun(wc, args.workitems);
+		if (rc < 0) {
+			WC_ERROR("Unable to execute the MD5 code.\n");
+			break;
+		} else {
+			WC_INFO("Test run sucessful.\n");
+			rc = 0;
+		}
+	} while (0);
+
 	wc_runtime_destroy(wc);
 	if (alloced)
 		WC_FREE(code);
 	wc_arguments_cleanup(&args);
-	return 0;
+	return rc;
 }

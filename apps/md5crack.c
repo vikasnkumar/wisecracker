@@ -300,7 +300,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		WC_INFO("For device[%u] Parallel tries: %lu Kernel calls: %lu\n", idx,
 				parallel_tries, (unsigned long)max_kernel_calls);
 		// create the kernel program and the buffers
-		kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
+		kernel = clCreateKernel(plat->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 		matches_mem = clCreateBuffer(plat->context, CL_MEM_READ_WRITE,
 				sizeof(cl_uchar16), NULL, &rc);
@@ -418,15 +418,21 @@ int main(int argc, char **argv)
 
 	// we create the build options for nchars
 	buildopts = wc_md5_create_buildopts(args.nchars);
-	rc = wc_runtime_program_load(wc, (const char *)code, codelen, buildopts);
-	if (rc < 0)
-		WC_ERROR("Unable to compile the source code from %s\n",
-				args.cl_filename ? args.cl_filename : WC_MD5_CL);
-
-	rc = wc_md5_checker(wc, args.md5sum, args.prefix, args.charset,
-			args.nchars);
-	if (rc < 0)
-		WC_ERROR("Unable to verify MD5 sums.\n");
+	do {
+		rc = wc_runtime_program_load(wc, (const char *)code, codelen,
+				buildopts);
+		if (rc < 0) {
+			WC_ERROR("Unable to compile the source code from %s\n",
+					args.cl_filename ? args.cl_filename : WC_MD5_CL);
+			break;
+		}
+		rc = wc_md5_checker(wc, args.md5sum, args.prefix, args.charset,
+				args.nchars);
+		if (rc < 0) {
+			WC_ERROR("Unable to verify MD5 sums.\n");
+			break;
+		}
+	} while (0);
 	wc_runtime_destroy(wc);
 	if (alloced)
 		WC_FREE(code);

@@ -37,6 +37,7 @@ typedef struct {
 		cl_uint used_devices; /* number of devices used */
 		cl_uint max_devices; /* max number of devices for this platform */
 		cl_context context; /* a context is per platform */
+		cl_program program; /* a program is per context */
 } wc_platform_t;
 
 typedef struct {
@@ -51,8 +52,7 @@ typedef struct {
 	cl_ulong globalmem_sz;
 	cl_ulong constmem_sz;
 	cl_ulong localmem_sz;
-	cl_command_queue cmdq;
-	cl_program program;
+	cl_command_queue cmdq; /* a command queue is per device */
 } wc_device_t;
 
 typedef struct {

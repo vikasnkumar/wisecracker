@@ -52,7 +52,7 @@ do { \
         rc = 0; \
     } else { \
 		WC_ERROR_OUTOFMEMORY(bufsz + 1); \
-        rc = -1; \
+        rc = CL_OUT_OF_HOST_MEMORY; \
         break; \
     } \
 } while (0)
@@ -113,7 +113,7 @@ static int wc_runtime_device_info(wc_device_t *dev)
 			dev->workitem_sz = WC_MALLOC(sizeof(size_t) * dev->workitem_dim);
 			if (!dev->workitem_sz) {
 				WC_ERROR_OUTOFMEMORY(sizeof(size_t) * dev->workitem_dim);
-				rc = -1;
+				rc = CL_OUT_OF_HOST_MEMORY;
 				break;
 			}
 			rc = clGetDeviceInfo(dev->id, CL_DEVICE_MAX_WORK_ITEM_SIZES,
@@ -176,6 +176,7 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 		plids = WC_MALLOC(num * sizeof(*plids));
 		if (!plids) {
 			WC_ERROR_OUTOFMEMORY(sizeof(*plids) * num);
+			rc = CL_OUT_OF_HOST_MEMORY;
 			break;
 		}
 		memset(plids, 0, sizeof(*plids) * num);
@@ -205,13 +206,14 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 		wc = WC_MALLOC(sizeof(*wc));
 		if (!wc) {
 			WC_ERROR_OUTOFMEMORY(sizeof(*wc));
+			rc = CL_OUT_OF_HOST_MEMORY;
 			break;
 		}
 		memset(wc, 0, sizeof(*wc));
 		wc->platforms = WC_MALLOC(sizeof(wc_platform_t) * num);
 		if (!wc->platforms) {
 			WC_ERROR_OUTOFMEMORY(sizeof(wc_platform_t) * num);
-			rc = -1;
+			rc = CL_OUT_OF_HOST_MEMORY;
 			break;
 		}
 		memset(wc->platforms, 0, sizeof(wc_platform_t) * num);
@@ -243,7 +245,7 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 				if (!plat->dev_indices) {
 					WC_ERROR_OUTOFMEMORY(sizeof(*plat->dev_indices) *
 										plat->max_devices);
-					rc = -1;
+					rc = CL_OUT_OF_HOST_MEMORY;
 					break;
 				}
 				memset(plat->dev_indices, 0, sizeof(*plat->dev_indices) *
@@ -267,13 +269,14 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 		devids = WC_MALLOC(sizeof(cl_device_id) * total_devnum);
 		if (!devids) {
 			WC_ERROR_OUTOFMEMORY(sizeof(cl_device_id) * total_devnum);
-			rc = -1;
+			rc = CL_OUT_OF_HOST_MEMORY;
+			break;
 		}
 		// now allocate the device structures
 		wc->devices = WC_MALLOC(sizeof(wc_device_t) * max_devices);
 		if (!wc->devices) {
 			WC_ERROR_OUTOFMEMORY(sizeof(wc_device_t) * max_devices);
-			rc = -1;
+			rc = CL_OUT_OF_HOST_MEMORY;
 			break;
 		}
 		memset(wc->devices, 0, sizeof(wc_device_t) * max_devices);
@@ -355,16 +358,17 @@ void wc_runtime_destroy(wc_runtime_t *wc)
 				if (rc != CL_SUCCESS)
 					WC_ERROR_OPENCL(clReleaseCommandQueue, rc);
 			}
-			if (wc->devices[idx].program) {
-				rc = clReleaseProgram(wc->devices[idx].program);
-				if (rc != CL_SUCCESS)
-					WC_ERROR_OPENCL(clReleaseProgram, rc);
-			}
 			WC_FREE(wc->devices[idx].workitem_sz);
 		}
 		for (idx = 0; idx < wc->platform_max; ++idx) {
+			cl_int rc = CL_SUCCESS;
+			if (wc->platforms[idx].program) {
+				rc = clReleaseProgram(wc->platforms[idx].program);
+				if (rc != CL_SUCCESS)
+					WC_ERROR_OPENCL(clReleaseProgram, rc);
+			}
 			if (wc->platforms[idx].context) {
-				cl_int rc = clReleaseContext(wc->platforms[idx].context);
+				rc = clReleaseContext(wc->platforms[idx].context);
 				if (rc != CL_SUCCESS)
 					WC_ERROR_OPENCL(clReleaseContext, rc);
 			}
@@ -452,13 +456,29 @@ do { \
 #undef LOCAL_PRINT_UNITS
 }
 
-static void wc_runtime_program_buildlog(wc_device_t *dev)
+static void wc_runtime_program_buildlog(cl_program program, cl_device_id devid)
 {
-	if (dev) {
+	if (program && devid) {
 		cl_int rc = CL_SUCCESS;
 		size_t logsz = 0;
 		char *logmsg = NULL;
-		rc = clGetProgramBuildInfo(dev->program, dev->id, CL_PROGRAM_BUILD_LOG, 0,
+		cl_build_status bs;
+		rc = clGetProgramBuildInfo(program, devid, CL_PROGRAM_BUILD_STATUS,
+						sizeof(cl_build_status), &bs, NULL);
+		if (rc != CL_SUCCESS) {
+			WC_ERROR_OPENCL(clGetProgramBuildInfo, rc);
+			return;
+		}
+		if (bs == CL_BUILD_SUCCESS) {
+			WC_INFO("Program build was a success.\n");
+			return;
+		} else if (bs == CL_BUILD_ERROR) {
+			WC_ERROR("Program build errored out.\n");
+		} else {
+			WC_WARN("The build hasn't been invoked or is in progress.\n");
+			return;
+		}
+		rc = clGetProgramBuildInfo(program, devid, CL_PROGRAM_BUILD_LOG, 0,
 									NULL, &logsz);
 		if (rc != CL_SUCCESS) {
 			WC_ERROR_OPENCL(clGetProgramBuildInfo, rc);
@@ -471,12 +491,12 @@ static void wc_runtime_program_buildlog(wc_device_t *dev)
 			return;
 		}
 		memset(logmsg, 0, logsz);
-		rc = clGetProgramBuildInfo(dev->program, dev->id, CL_PROGRAM_BUILD_LOG,
-									logsz, logmsg, &logsz);
+		rc = clGetProgramBuildInfo(program, devid, CL_PROGRAM_BUILD_LOG, logsz,
+									logmsg, &logsz);
 		if (rc != CL_SUCCESS) {
 			WC_ERROR_OPENCL(clGetProgramBuildInfo, rc);
 		} else {
-			WC_DEBUG("OpenCL Compiler output:\n%s\n", logmsg);
+			WC_INFO("OpenCL Compiler output:\n%s\n", logmsg);
 		}
 		WC_FREE(logmsg);
 	}
@@ -488,6 +508,7 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 {
 	cl_int rc = CL_SUCCESS;
 	char *build_options = NULL;
+	cl_device_id *devids = NULL;
 	cl_uint idx;
 	if (!src || len == 0) {
 		WC_DEBUG("invalid function parameters.\n");
@@ -519,45 +540,70 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 		}
 	}
 	WC_INFO("Using build options: %s\n", build_options);
-	for (idx = 0; idx < wc->device_max; ++idx) {
-		cl_program program;
+	// allocate a large array for holding device ids
+	// the max size of this array is the total number of devices
+	// but per platform a smaller size might be needed
+	devids = WC_MALLOC(sizeof(cl_device_id) * wc->device_max);
+	if (!devids) {
+		WC_ERROR_OUTOFMEMORY(sizeof(cl_device_id) * wc->device_max);
+		return -1;
+	}
+	// a program object is per context
+	// so we build the program object per platform first
+	// then compile it with all the devices
+	for (idx = 0; idx < wc->platform_max; ++idx) {
+		cl_program program = (cl_program)0;
 		struct timeval tv1, tv2;
-		wc_device_t *dev = &wc->devices[idx];
-		wc_platform_t *plat = NULL;
-		if (dev->program) {
-			int err = clReleaseProgram(dev->program);
+		cl_uint devnum = 0;
+		cl_uint jdx;
+		wc_platform_t *plat = &wc->platforms[idx];
+		if (plat->used_devices == 0) {
+			WC_DEBUG("Platform %s has no devices.\n", plat->name);
+			continue;
+		}
+		if (plat->program) {
+			int err = clReleaseProgram(plat->program);
 			if (err != CL_SUCCESS)
 				WC_ERROR_OPENCL(clReleaseProgram, err);
 			WC_DEBUG("Releasing an earlier program.\n");
 		}
-		dev->program = (cl_program)0;
-		if (dev->pl_index < wc->platform_max) {
-			plat = &wc->platforms[dev->pl_index];
-		} else {
-			WC_ERROR("Device platform reference is %u > maximum %u\n",
-					dev->pl_index, wc->platform_max);
-			rc = -1;
-			break;
-		}
+		plat->program = (cl_program)0;
 		wc_util_timeofday(&tv1);
 		program = clCreateProgramWithSource(plat->context, 1, &src, &len, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateProgramWithSource, rc);
-		dev->program = program;
-		rc = clBuildProgram(dev->program, 1, &dev->id, build_options,
+		// ok let's collect all the device ids into an array
+		memset(devids, 0, sizeof(cl_device_id) * wc->device_max);
+		devnum = 0;
+		for (jdx = 0; jdx < plat->used_devices; ++jdx) {
+			cl_uint devidx = plat->dev_indices[jdx];
+			if (devidx >= wc->device_max) {
+				WC_WARN("Invalid device index %u on platform %s\n", devidx,
+						plat->name);
+				continue;
+			}
+			devids[devnum++] = wc->devices[devidx].id;
+		}
+		// ok we have devnum devices and all the device ids in devids
+		// let's build the program per platform
+		rc = clBuildProgram(program, devnum, devids, build_options,
 							NULL, NULL);
 		if (rc != CL_SUCCESS) {
-			wc_runtime_program_buildlog(dev);
-			clReleaseProgram(dev->program);
-			dev->program = (cl_program)0;
+			for (jdx = 0; jdx < devnum; ++jdx)
+				wc_runtime_program_buildlog(program, devids[jdx]);
+			clReleaseProgram(program);
+			plat->program = (cl_program)0;
 			WC_ERROR_OPENCL_BREAK(clBuildProgram, rc);
 		} else {
-			wc_runtime_program_buildlog(dev);
+			for (jdx = 0; jdx < devnum; ++jdx)
+				wc_runtime_program_buildlog(program, devids[jdx]);
+			plat->program = program;
 		}
 		wc_util_timeofday(&tv2);
 		WC_INFO("Time taken to compile for device(%s) is %lf seconds.\n",
 				plat->name, WC_TIME_TAKEN(tv1, tv2));
 	}
 	WC_FREE(build_options);
+	WC_FREE(devids);
 	return (rc == CL_SUCCESS) ? 0 : -1;
 }
 
