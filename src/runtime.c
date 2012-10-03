@@ -456,7 +456,8 @@ do { \
 #undef LOCAL_PRINT_UNITS
 }
 
-static void wc_runtime_program_buildlog(cl_program program, cl_device_id devid)
+static void wc_runtime_program_buildlog(cl_program program, cl_device_id devid,
+										const char *plname)
 {
 	if (program && devid) {
 		cl_int rc = CL_SUCCESS;
@@ -470,7 +471,8 @@ static void wc_runtime_program_buildlog(cl_program program, cl_device_id devid)
 			return;
 		}
 		if (bs == CL_BUILD_SUCCESS) {
-			WC_INFO("Program build was a success.\n");
+			WC_DEBUG("Program build was a success for a device on %s.\n",
+					plname);
 			return;
 		} else if (bs == CL_BUILD_ERROR) {
 			WC_ERROR("Program build errored out.\n");
@@ -589,13 +591,13 @@ int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 							NULL, NULL);
 		if (rc != CL_SUCCESS) {
 			for (jdx = 0; jdx < devnum; ++jdx)
-				wc_runtime_program_buildlog(program, devids[jdx]);
+				wc_runtime_program_buildlog(program, devids[jdx], plat->name);
 			clReleaseProgram(program);
 			plat->program = (cl_program)0;
 			WC_ERROR_OPENCL_BREAK(clBuildProgram, rc);
 		} else {
 			for (jdx = 0; jdx < devnum; ++jdx)
-				wc_runtime_program_buildlog(program, devids[jdx]);
+				wc_runtime_program_buildlog(program, devids[jdx], plat->name);
 			plat->program = program;
 		}
 		wc_util_timeofday(&tv2);
