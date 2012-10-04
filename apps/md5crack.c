@@ -287,7 +287,7 @@ int wc_md5_checker_old(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		size_t parallel_tries = dev->localmem_sz / localmem_per_kernel;
 		cl_ulong kdx;
 		struct timeval tv1, tv2;
-		float progress;
+		float progress = 0.0;
 		double ttinterval = -1.0;
 		if (dev->pl_index >= wc->platform_max) {
 			WC_ERROR("Invalid platform index for device.\n");
@@ -449,7 +449,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		size_t local_work_size[1] = { 0 };
 		cl_ulong kdx;
 		struct timeval tv1, tv2;
-		float progress;
+		float progress = 0.0;
 		double ttinterval = -1.0;
 		cl_int found = -1; // index of matches which has the result
 
@@ -513,6 +513,8 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 					&localmem_per_kernel, NULL);
 			WC_ERROR_OPENCL_BREAK(clGetKernelWorkGroupInfo, rc);
 			WC_DEBUG("local mem per kernel: %lu\n", localmem_per_kernel);
+			if (localmem_per_kernel < 32)
+				localmem_per_kernel = 32;
 			parallel_tries[idx] = dev->localmem_sz / localmem_per_kernel;
 			// scale the tries to number of compute units times the charset
 			// size.
@@ -556,6 +558,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		local_work_size[0] = 1;
 		wc_util_timeofday(&tv1);
 		found = -1;
+		progress = 0.0;
 		for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
 			float cur_progress = 0.0;
 			// zero out the matches buffer
