@@ -446,7 +446,6 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		cl_ulong2 index_range;
 		size_t global_work_offset[1] = { 0 };
 		size_t global_work_size[1] = { 0 };
-		size_t local_work_size[1] = { 0 };
 		cl_ulong kdx;
 		struct timeval tv1, tv2;
 		float progress = 0.0;
@@ -555,7 +554,6 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				(unsigned long)max_kernel_calls,
 				total_parallel_tries);
 		global_work_offset[0] = 0;
-		local_work_size[0] = 1;
 		wc_util_timeofday(&tv1);
 		found = -1;
 		progress = 0.0;
@@ -567,17 +565,16 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			for (idx = 0; idx < wc->device_max; ++idx) {
 				const cl_uint workdim = 1;
 				wc_device_t *dev = &wc->devices[idx];
-				global_work_size[0] = global_work_offset[0] +
-										parallel_tries[idx];
-				WC_DEBUG("Work offset: %lu size: %lu for device[%u]\n",
-						global_work_offset[0], global_work_size[0], idx);
+				global_work_size[0] = parallel_tries[idx];
+//				WC_DEBUG("Work offset: %lu size: %lu for device[%u]\n",
+//						global_work_offset[0], global_work_size[0], idx);
 				// enqueue the mem-write for the device
 				rc = clEnqueueWriteBuffer(dev->cmdq, match_mems[idx], CL_FALSE,
 						0, sizeof(cl_uchar16), &matches[idx], 0, NULL, NULL);
 				WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
 				// enqueue the kernel for the device
 				rc = clEnqueueNDRangeKernel(dev->cmdq, kernels[idx], workdim,
-						global_work_offset, global_work_size, local_work_size,
+						global_work_offset, global_work_size, NULL,
 						0, NULL, NULL);
 				WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
 				// enqueue the mem-read for the device
@@ -588,7 +585,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
 				rc = clFlush(dev->cmdq);
 				WC_ERROR_OPENCL_BREAK(clFlush, rc);
-				global_work_offset[0] = global_work_size[0];
+				global_work_offset[0] += global_work_size[0];
 				if (global_work_offset[0] >= total_parallel_tries)
 					break;
 			}
