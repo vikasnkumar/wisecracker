@@ -309,7 +309,7 @@ int main(int argc, char **argv)
 	assert(code != NULL);
 	assert(codelen > 0);
 
-	wc = wc_runtime_create(args.device_flag, args.max_devices);
+	wc = wc_runtime_create(args.device_flag, args.max_devices, 0);
 	assert(wc != NULL);
 	wc_runtime_dump(wc);
 

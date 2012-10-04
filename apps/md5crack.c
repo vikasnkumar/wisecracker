@@ -223,7 +223,7 @@ char *wc_md5_create_buildopts(uint8_t nchars)
 	return NULL;
 }
 
-int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
+int wc_md5_checker_old(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		wc_util_charset_t charset, const uint8_t nchars)
 {
 	cl_int rc = CL_SUCCESS;
@@ -379,6 +379,267 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 	return (rc == CL_SUCCESS) ? 0 : -1;
 }
 
+int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
+		wc_util_charset_t charset, const uint8_t nchars)
+{
+	cl_int rc = CL_SUCCESS;
+	uint32_t idx;
+	cl_ulong max_possibilities = 0;
+	cl_uchar16 input;
+	cl_uchar16 digest;
+	size_t pfxlen = 0;
+	uint8_t zchars = 0;
+	cl_ulong total_parallel_tries = 0;
+	cl_kernel *kernels = NULL; // a kernel per device
+	cl_mem *match_mems = NULL; // a memory buffer per device
+	cl_uchar16 *matches = NULL; // a buffer to store the output per device
+	cl_ulong *parallel_tries = NULL; // parallel_tries per device
+	cl_event *dev_events = NULL; // event per device for now
+
+	cl_ulong charset_sz = wc_util_charset_size(charset);
+	if (!md5sum || !wc_runtime_is_usable(wc) || (nchars < 1) || (nchars >= 16))
+		return -1;
+	if (strlen(md5sum) != (2 * MD5_DIGEST_LENGTH))
+		return -1;
+	pfxlen = prefix ? strlen(prefix) : 0;
+	if (pfxlen >= nchars) {
+		WC_WARN("Input string is already complete. Max length accepted is %d\n",
+				(int)nchars);
+		return -1;
+	}
+	zchars = nchars - (uint8_t)pfxlen;
+	max_possibilities = wc_md5_possibilities(charset, zchars);
+	if (max_possibilities == 0) {
+		WC_WARN("Max possibilities was calculated to be 0 for %s of %d chars\n",
+				wc_util_charset_tostring(charset), (int)zchars);
+		return -1;
+	}
+	WC_INFO("Max possibilities: %lu\n", (unsigned long)max_possibilities);
+	// copy the initial input
+	memset(&input, 0, sizeof(input));
+	for (idx = 0; idx < pfxlen; ++idx)
+		input.s[idx] = (cl_uchar)prefix[idx];
+	// convert md5sum text to a digest
+	memset(&digest, 0, sizeof(digest));
+	for (idx = 0; idx < 2 * MD5_DIGEST_LENGTH; idx += 2)
+		digest.s[idx >> 1] = (wc_md5_decoder[(int)md5sum[idx]] << 4) |
+							wc_md5_decoder[(int)md5sum[idx + 1]];
+	// for each device
+	// check workgroup size and select number of parallel executions per kernel
+	// invocation
+	// check maximum number of kernel invocations needed
+	//
+	// for each device, create a kernel object and a memory buffer object
+	// this is necessary since each device has its own command-queue
+	do {
+		cl_ulong max_kernel_calls = 0;
+		cl_uint charset_type = (cl_uint)charset;
+		cl_ulong stride = 0;
+		cl_ulong2 index_range;
+		size_t global_work_offset[1] = { 0 };
+		size_t global_work_size[1] = { 0 };
+		size_t local_work_size[1] = { 0 };
+		cl_ulong kdx;
+		struct timeval tv1, tv2;
+		float progress;
+		double ttinterval = -1.0;
+		cl_int found = -1; // index of matches which has the result
+
+		kernels = WC_MALLOC(sizeof(cl_kernel) * wc->device_max);
+		if (!kernels) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_kernel) * wc->device_max);
+			rc = -1;
+			break;
+		}
+		memset(kernels, 0, sizeof(cl_kernel) * wc->device_max);
+		match_mems = WC_MALLOC(sizeof(cl_mem) * wc->device_max);
+		if (!match_mems) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_mem) * wc->device_max);
+			rc = -1;
+			break;
+		}
+		memset(match_mems, 0, sizeof(cl_mem) * wc->device_max);
+		parallel_tries = WC_MALLOC(sizeof(cl_ulong) * wc->device_max);
+		if (!parallel_tries) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_ulong) * wc->device_max);
+			rc = -1;
+			break;
+		}
+		memset(parallel_tries, 0, sizeof(cl_ulong) * wc->device_max);
+		matches = WC_MALLOC(sizeof(cl_uchar16) * wc->device_max);
+		if (!matches) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_uchar16) * wc->device_max);
+			rc = -1;
+			break;
+		}
+		memset(matches, 0, sizeof(cl_uchar16) * wc->device_max);
+		dev_events = WC_MALLOC(sizeof(cl_event) * wc->device_max);
+		if (!dev_events) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_event) * wc->device_max);
+			rc = -1;
+			break;
+		}
+		memset(dev_events, 0, sizeof(cl_event) * wc->device_max);
+		for (idx = 0; idx < wc->device_max; ++idx) {
+			wc_device_t *dev = &wc->devices[idx];
+			wc_platform_t *plat = NULL;
+			cl_ulong localmem_per_kernel = 0;
+			cl_uint argc = 0;
+			if (dev->pl_index >= wc->platform_max) {
+				WC_ERROR("Invalid device platform index.\n");
+				rc = -1;
+				break;
+			}
+			plat = &wc->platforms[dev->pl_index];
+			// create the kernel and memory objects per device
+			kernels[idx] = (cl_kernel)0;
+			match_mems[idx] = (cl_mem)0;
+			kernels[idx] = clCreateKernel(plat->program, wc_md5_cl_kernel, &rc);
+			WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
+			match_mems[idx] = clCreateBuffer(plat->context, CL_MEM_READ_WRITE,
+					sizeof(cl_uchar16), NULL, &rc);
+			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
+			// max tries allowed based on local memory availability
+			clGetKernelWorkGroupInfo(kernels[idx], dev->id,
+					CL_KERNEL_LOCAL_MEM_SIZE, sizeof(cl_ulong),
+					&localmem_per_kernel, NULL);
+			WC_ERROR_OPENCL_BREAK(clGetKernelWorkGroupInfo, rc);
+			parallel_tries[idx] = dev->localmem_sz / localmem_per_kernel;
+			parallel_tries[idx] *= dev->compute_units;
+			parallel_tries[idx] *= charset_sz;
+			WC_DEBUG("Parallel tries for device[%u] is %lu\n", idx,
+					parallel_tries[idx]);
+			total_parallel_tries += parallel_tries[idx];
+			// now we assign the arguments to each kernel
+			argc = 0;
+			index_range.s[0] = 0;
+			index_range.s[1] = 1;
+			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uchar16),
+					&input);
+			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uchar16),
+					&digest);
+			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_mem),
+					&match_mems[idx]);
+			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uint),
+					&charset_type);
+			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_ulong),
+					&stride);
+			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_ulong2),
+					&index_range);
+			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
+		}
+		if (rc < 0)
+			break;
+		if (max_possibilities <= total_parallel_tries) {
+			max_kernel_calls = 1;
+			total_parallel_tries = max_possibilities;
+		} else {
+			// find the ceiling maximum number of kernel calls needed
+			max_kernel_calls = (max_possibilities / total_parallel_tries) +
+				((max_possibilities % total_parallel_tries) ? 1 : 0);
+		}
+		WC_INFO("Maximum Kernel calls: %lu\n", (unsigned long)max_kernel_calls);
+		global_work_offset[0] = 0;
+		local_work_size[0] = 1;
+		wc_util_timeofday(&tv1);
+		found = -1;
+		for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
+			float cur_progress = 0.0;
+			// zero out the matches buffer
+			memset(matches, 0, sizeof(cl_uchar16) * wc->device_max);
+			// enqueue all the required calls for every device
+			for (idx = 0; idx < wc->device_max; ++idx) {
+				const cl_uint workdim = 1;
+				wc_device_t *dev = &wc->devices[idx];
+				global_work_size[0] = parallel_tries[idx];
+				// enqueue the mem-write for the device
+				rc = clEnqueueWriteBuffer(dev->cmdq, match_mems[idx], CL_FALSE,
+						0, sizeof(cl_uchar16), &matches[idx], 0, NULL, NULL);
+				WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
+				// enqueue the kernel for the device
+				rc = clEnqueueNDRangeKernel(dev->cmdq, kernels[idx], workdim,
+						global_work_offset, global_work_size, local_work_size,
+						0, NULL, NULL);
+				WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
+				// enqueue the mem-read for the device
+				dev_events[idx] = (cl_event)0;
+				rc = clEnqueueReadBuffer(dev->cmdq, match_mems[idx], CL_FALSE,
+						0, sizeof(cl_uchar16), &matches[idx], 0, NULL,
+						&dev_events[idx]);
+				WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
+				rc = clFlush(dev->cmdq);
+				WC_ERROR_OPENCL_BREAK(clFlush, rc);
+				global_work_offset[0] += global_work_size[0];
+			}
+			if (rc < 0)
+				break;
+			// wait for all the devices to complete work FIXME: inefficient
+			rc = clWaitForEvents(wc->device_max, dev_events);
+			WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
+			for (idx = 0; idx < wc->device_max; ++idx) {
+				rc |= clReleaseEvent(dev_events[idx]);
+				dev_events[idx] = (cl_event)0;
+			}
+			// ok now check for matches
+			for (idx = 0; idx < wc->device_max; ++idx) {
+				if (matches[idx].s[0] != 0) {
+					int8_t l = 0;
+					wc_util_timeofday(&tv2);
+					WC_INFO("Found match in %luth kernel call: ",
+							(unsigned long)kdx);
+					for (l = 0; l < nchars; ++l)
+						WC_NULL("%c", matches[idx].s[l]);
+					WC_NULL("\n");
+					WC_INFO("Time taken for finding match: %lfs\n",
+							WC_TIME_TAKEN(tv1, tv2));
+					found = idx;
+					break;
+				}
+			}
+			if (found >= 0) {
+				rc = CL_SUCCESS;
+				break;
+			}
+			cur_progress = (float)((kdx * 100.0) / max_kernel_calls);
+			if ((cur_progress - progress) >= 1.0) {
+				progress = cur_progress;
+				if (ttinterval < 0.0) {
+					wc_util_timeofday(&tv2);
+					ttinterval = WC_TIME_TAKEN(tv1, tv2);
+				}
+				WC_INFO("Progress: %.02f%% Estimated Remaining Time: %lfs\n",
+						progress, ttinterval * (100.0 - progress));
+			}
+		}
+		if (rc < 0)
+			break;
+		if (found < 0) {
+			WC_INFO("Unable to find a match.\n");
+		}
+	} while (0);
+	// free the memory and other objects
+	for (idx = 0; idx < wc->device_max; ++idx) {
+		if (kernels && kernels[idx]) {
+			rc |= clReleaseKernel(kernels[idx]);
+			kernels[idx] = (cl_kernel)0;
+		}
+		if (match_mems && match_mems[idx]) {
+			rc |= clReleaseMemObject(match_mems[idx]);
+			match_mems[idx] = (cl_mem)0;
+		}
+		if (dev_events && dev_events[idx]) {
+			rc |= clReleaseEvent(dev_events[idx]);
+			dev_events[idx] = (cl_event)0;
+		}
+	}
+	WC_FREE(kernels);
+	WC_FREE(match_mems);
+	WC_FREE(parallel_tries);
+	WC_FREE(matches);
+	WC_FREE(dev_events);
+	return (rc == CL_SUCCESS) ? 0 : -1;
+}
+
 int main(int argc, char **argv)
 {
 	wc_runtime_t *wc = NULL;
@@ -414,7 +675,7 @@ int main(int argc, char **argv)
 	assert(code != NULL);
 	assert(codelen > 0);
 
-	wc = wc_runtime_create(args.device_flag, args.max_devices);
+	wc = wc_runtime_create(args.device_flag, args.max_devices, 0);
 	assert(wc != NULL);
 	wc_runtime_dump(wc);
 

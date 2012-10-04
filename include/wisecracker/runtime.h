@@ -71,8 +71,11 @@ typedef struct {
 
 /* the flag can take values WC_DEVICE_CPU, WC_DEVICE_GPU or WC_DEVICE_ANY
  * Any other value is interpreted as WC_DEVICE_ANY.
+ * allow_outoforder takes values 0 or 1. Default is 0 if you don't know what
+ * you're doing.
  */
-WCDLL wc_runtime_t *wc_runtime_create(uint32_t devicetype, uint32_t max_devices);
+WCDLL wc_runtime_t *wc_runtime_create(uint32_t devicetype, uint32_t max_devices,
+					uint8_t allow_outoforder);
 
 WCDLL void wc_runtime_destroy(wc_runtime_t *wc);
 

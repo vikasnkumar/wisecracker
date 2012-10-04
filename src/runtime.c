@@ -23,6 +23,12 @@
  */
 #include <wisecracker.h>
 
+#ifdef DEBUG
+	#define WC_PROFILING_ENABLE CL_QUEUE_PROFILING_ENABLE
+#else
+	#define WC_PROFILING_ENABLE 0
+#endif
+
 static void CL_CALLBACK wc_runtime_pfn_notify(const char *errinfo,
 											const void *pvtinfo,
 											size_t cb, void *userdata)
@@ -152,7 +158,8 @@ static int wc_runtime_device_info(wc_device_t *dev)
 	return (rc == CL_SUCCESS) ? 0 : -1;
 }
 
-wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
+wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices,
+								uint8_t allow_outoforder)
 {
 	cl_int rc = CL_SUCCESS;
 	cl_platform_id *plids = NULL;
@@ -314,15 +321,18 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices)
 			for (jdx = 0; jdx < devnum && dev_idx < wc->device_max &&
 						plat->used_devices < plat->max_devices; ++jdx) {
 				wc_device_t *dev = &wc->devices[dev_idx];
+				cl_command_queue_properties props = WC_PROFILING_ENABLE;
 				memset(dev, 0, sizeof(*dev));
 				dev->id = devids[jdx];
 				dev->pl_index = idx;
 				dev->type = devtype;
 				if (wc_runtime_device_info(dev) < 0)
 					continue;
+				if (allow_outoforder)
+					props |= CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE;
 				// we create a command queue per device
-				dev->cmdq = clCreateCommandQueue(plat->context, dev->id,
-						CL_QUEUE_PROFILING_ENABLE, &rc);
+				dev->cmdq = clCreateCommandQueue(plat->context, dev->id, props,
+												&rc);
 				WC_ERROR_OPENCL_BREAK(clCreateCommandQueue, rc);
 				plat->dev_indices[plat->used_devices++] = dev_idx;
 				dev_idx++;
