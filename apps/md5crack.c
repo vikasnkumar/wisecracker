@@ -42,6 +42,7 @@ struct wc_arguments {
 	uint8_t nchars; // a single byte can have values 0-255
 	char *md5sum;
 	char *prefix;
+	uint8_t old;
 };
 
 int wc_arguments_usage(const char *app)
@@ -68,6 +69,7 @@ int wc_arguments_usage(const char *app)
 			wc_util_charset_tostring(WC_UTIL_CHARSET_DIGIT),
 			wc_util_charset_tostring(WC_UTIL_CHARSET_SPECIAL),
 			wc_util_charset_tostring(WC_UTIL_CHARSET_ALNUMSPL));
+	printf("\n\t-O\t\tUse old cracking method.\n");
 	printf("\n");
 	exit(1);
 }
@@ -86,8 +88,9 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 	args->nchars = 8;
 	args->md5sum = NULL;
 	args->prefix = NULL;
+	args->old = 0;
 	appname = WC_BASENAME(argv[0]);
-	while ((opt = getopt(argc, argv, "hgcm:f:M:p:C:N:")) != -1) {
+	while ((opt = getopt(argc, argv, "hgcOm:f:M:p:C:N:")) != -1) {
 		switch (opt) {
 		case 'f':
 			args->cl_filename = wc_util_strdup(optarg);
@@ -104,6 +107,9 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 			break;
 		case 'g':
 			args->device_flag = WC_DEVICE_GPU;
+			break;
+		case 'O':
+			args->old = 1;
 			break;
 		case 'M':
 			/* each byte is represented as 2 characters */
@@ -172,6 +178,8 @@ void wc_arguments_dump(const struct wc_arguments *args)
 			WC_INFO("Will try to crack MD5 sum: %s\n", args->md5sum);
 		if (args->prefix)
 			WC_INFO("Will use prefix: %s\n", args->prefix);
+		if (args->old)
+			WC_INFO("Will use old method\n");
 	}
 }
 
@@ -504,9 +512,11 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 					CL_KERNEL_LOCAL_MEM_SIZE, sizeof(cl_ulong),
 					&localmem_per_kernel, NULL);
 			WC_ERROR_OPENCL_BREAK(clGetKernelWorkGroupInfo, rc);
+			WC_DEBUG("local mem per kernel: %lu\n", localmem_per_kernel);
 			parallel_tries[idx] = dev->localmem_sz / localmem_per_kernel;
-			parallel_tries[idx] *= dev->compute_units;
-			parallel_tries[idx] *= charset_sz;
+			// scale the tries to number of compute units times the charset
+			// size.
+			parallel_tries[idx] *= (dev->compute_units * charset_sz);
 			WC_DEBUG("Parallel tries for device[%u] is %lu\n", idx,
 					parallel_tries[idx]);
 			total_parallel_tries += parallel_tries[idx];
@@ -514,6 +524,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			argc = 0;
 			index_range.s[0] = 0;
 			index_range.s[1] = 1;
+			stride = 0;
 			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uchar16),
 					&input);
 			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uchar16),
@@ -538,7 +549,9 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			max_kernel_calls = (max_possibilities / total_parallel_tries) +
 				((max_possibilities % total_parallel_tries) ? 1 : 0);
 		}
-		WC_INFO("Maximum Kernel calls: %lu\n", (unsigned long)max_kernel_calls);
+		WC_INFO("Maximum Kernel calls: %lu Parallel Tries Per Call: %lu\n",
+				(unsigned long)max_kernel_calls,
+				total_parallel_tries);
 		global_work_offset[0] = 0;
 		local_work_size[0] = 1;
 		wc_util_timeofday(&tv1);
@@ -551,7 +564,10 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			for (idx = 0; idx < wc->device_max; ++idx) {
 				const cl_uint workdim = 1;
 				wc_device_t *dev = &wc->devices[idx];
-				global_work_size[0] = parallel_tries[idx];
+				global_work_size[0] = global_work_offset[0] +
+										parallel_tries[idx];
+				WC_DEBUG("Work offset: %lu size: %lu for device[%u]\n",
+						global_work_offset[0], global_work_size[0], idx);
 				// enqueue the mem-write for the device
 				rc = clEnqueueWriteBuffer(dev->cmdq, match_mems[idx], CL_FALSE,
 						0, sizeof(cl_uchar16), &matches[idx], 0, NULL, NULL);
@@ -569,7 +585,9 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
 				rc = clFlush(dev->cmdq);
 				WC_ERROR_OPENCL_BREAK(clFlush, rc);
-				global_work_offset[0] += global_work_size[0];
+				global_work_offset[0] = global_work_size[0];
+				if (global_work_offset[0] >= total_parallel_tries)
+					break;
 			}
 			if (rc < 0)
 				break;
@@ -689,8 +707,14 @@ int main(int argc, char **argv)
 					args.cl_filename ? args.cl_filename : WC_MD5_CL);
 			break;
 		}
-		rc = wc_md5_checker(wc, args.md5sum, args.prefix, args.charset,
+		if (args.old) {
+			rc = wc_md5_checker_old(wc, args.md5sum, args.prefix, args.charset,
 				args.nchars);
+		} else {
+			rc = wc_md5_checker(wc, args.md5sum, args.prefix, args.charset,
+				args.nchars);
+
+		}
 		if (rc < 0) {
 			WC_ERROR("Unable to verify MD5 sums.\n");
 			break;

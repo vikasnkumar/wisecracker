@@ -511,8 +511,6 @@ __kernel void wc_md5sum_check(uchar16 input, /* starting portion of the string *
 	__constant uchar *charset = WC_CHARSET_ALNUMSPL;
 	uint charset_sz = WC_UTIL_CHARSET_ALNUMSPL_SZ;
 
-	if (get_global_id(0) > stride)
-		return;
 	switch (charset_type) {
 	case WC_UTIL_CHARSET_ALPHA:
 		divisors = WC_DIVISORS_ALPHA;
@@ -574,7 +572,9 @@ __kernel void wc_md5sum_check(uchar16 input, /* starting portion of the string *
 		for (int i = 0; i < 16; ++i)
 			flag |= (dig[i] - out[i]);
 		if (flag == 0) {
-			matches[0] = vload16(0, buf);
+			if (matches[0].s0 == 0) {
+				matches[0] = vload16(0, buf);
+			}
 			break;
 		}
 	}
