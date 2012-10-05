@@ -240,6 +240,7 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices,
 			if (rc == CL_DEVICE_NOT_FOUND || devnum == 0) {
 				WC_INFO("No devices found for platform %s\n", plat->name);
 				plat->max_devices = 0;
+				rc = CL_SUCCESS;
 				continue;
 			} else {
 				WC_ERROR_OPENCL_BREAK(clGetDeviceIDs, rc);
