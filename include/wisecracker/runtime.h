@@ -44,6 +44,7 @@ typedef struct {
 	cl_device_id id;
 	cl_uint pl_index; /* index into the platforms array */
 	cl_device_type type;
+	cl_uint address_bits;
 	cl_uint compute_units;
 	size_t workgroup_sz;
 	cl_uint workitem_dim;

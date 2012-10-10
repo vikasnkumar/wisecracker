@@ -97,15 +97,21 @@ static int wc_runtime_device_info(wc_device_t *dev)
 		cl_ulong val_ulong = 0;
 		size_t val_sizet = 0;
 		val_uint = 0;
+		rc = clGetDeviceInfo(dev->id, CL_DEVICE_ADDRESS_BITS,
+				sizeof(cl_uint), &val_uint, NULL);
+		WC_ERROR_OPENCL_BREAK(clGetDeviceInfo, rc);
+		dev->address_bits = val_uint;
+
+		val_uint = 0;
 		rc = clGetDeviceInfo(dev->id, CL_DEVICE_MAX_COMPUTE_UNITS,
 				sizeof(cl_uint), &val_uint, NULL);
-		WC_ERROR_OPENCL_BREAK(clGetDeviceInfo, rc);	
+		WC_ERROR_OPENCL_BREAK(clGetDeviceInfo, rc);
 		dev->compute_units = val_uint;
 		
 		val_sizet = 0;
 		rc = clGetDeviceInfo(dev->id, CL_DEVICE_MAX_WORK_GROUP_SIZE,
 				sizeof(size_t), &val_sizet, NULL);
-		WC_ERROR_OPENCL_BREAK(clGetDeviceInfo, rc);	
+		WC_ERROR_OPENCL_BREAK(clGetDeviceInfo, rc);
 		dev->workgroup_sz = val_sizet;
 
 		val_uint = 0;
@@ -442,6 +448,8 @@ do { \
 			if (devidx >= wc->device_max)
 				continue;
 			dev = &wc->devices[devidx];
+			WC_INFO("Device[%u] Address Bits: %u\n", devidx,
+					dev->address_bits);
 			WC_INFO("Device[%u] Compute Units: %u\n", devidx,
 					dev->compute_units);
 			WC_INFO("Device[%u] Workgroup size: %lu\n", devidx,
