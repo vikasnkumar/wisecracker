@@ -587,7 +587,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				rc = clFlush(dev->cmdq);
 				WC_ERROR_OPENCL_BREAK(clFlush, rc);
 				global_work_offset[0] += global_work_size[0];
-				if (global_work_offset[0] >= total_parallel_tries)
+				if (global_work_offset[0] >= max_possibilities)
 					break;
 			}
 			if (rc < 0)
