@@ -14,6 +14,8 @@ onwards is supported.
 http://slproweb.com/products/Win32OpenSSL.html
 7. For Windows you will also need the executable xxd.exe which can be gotten by
 installing either Vim or GNU utilities using MSys or Mingw or Cygwin.
+8. If you're running this on an Amazon AWS EC2 GPU VM, then you can setup your
+VM using the setup_amazonaws.sh script in the scripts/ directory
 
 How to install:
 

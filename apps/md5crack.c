@@ -590,8 +590,10 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				if (global_work_offset[0] >= max_possibilities)
 					break;
 			}
-			if (rc < 0)
+			if (rc < 0) {
+				WC_ERROR("Errored out in the %luth kernel\n", kdx);
 				break;
+			}
 			// wait for all the devices to complete work FIXME: inefficient
 			rc = clWaitForEvents(event_count, dev_events);
 			WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
