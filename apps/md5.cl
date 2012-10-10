@@ -502,9 +502,7 @@ __constant ulong WC_DIVISORS_ALNUMSPL[] = {
 __kernel void wc_md5sum_check(uchar16 input, /* starting portion of the string */
 					uchar16 digest, /* MD5 digest to compare */
 					__global uchar16 *matches, /* matching string output */
-					uint charset_type, /* charset type */
-					ulong stride, /* maximum stride */
-					ulong2 idxrange /* index range */
+					uint charset_type /* charset type */
 					)
 {
 	__constant ulong *divisors = WC_DIVISORS_ALNUMSPL;
@@ -543,39 +541,35 @@ __kernel void wc_md5sum_check(uchar16 input, /* starting portion of the string *
 	__local uchar dig[16];
 	// load the given md5 digest into array only once.
 	vstore16(digest, 0, dig);
-	for (ulong j = idxrange.s0; j < idxrange.s1; ++j) {
-		MD5_CTX ctx;
-		__local uchar out[16];
-		uchar buf[16]; // max allowed
-		uchar indices[16]; // each value is in [0. 94) so uchar is enough
-		short flag;
-		ulong id = get_global_id(0);
-		id += stride * j; // for multiple kernel invocations
-		#pragma unroll WC_MD5_CHECK_SIZE
-		for (int i = 0; i < WC_MD5_CHECK_SIZE; ++i) {
-			indices[i] = (id / divisors[i]) % charset_sz;
+	MD5_CTX ctx;
+	__local uchar out[16];
+	uchar buf[16]; // max allowed
+	uchar indices[16]; // each value is in [0. 94) so uchar is enough
+	short flag;
+	ulong id = get_global_id(0);
+	#pragma unroll WC_MD5_CHECK_SIZE
+	for (int i = 0; i < WC_MD5_CHECK_SIZE; ++i) {
+		indices[i] = (id / divisors[i]) % charset_sz;
+	}
+	vstore16(input, 0, buf);
+	#pragma unroll WC_MD5_CHECK_SIZE
+	for (int i = WC_MD5_CHECK_SIZE - 1; i >= 0; --i) {
+		if (buf[i] == 0) {
+			buf[i] = charset[indices[WC_MD5_CHECK_SIZE - 1 - i]];
 		}
-		vstore16(input, 0, buf);
-		#pragma unroll WC_MD5_CHECK_SIZE
-		for (int i = WC_MD5_CHECK_SIZE - 1; i >= 0; --i) {
-			if (buf[i] == 0) {
-				buf[i] = charset[indices[WC_MD5_CHECK_SIZE - 1 - i]];
-			}
-		}
+	}
 
-		md5_init(&ctx);
-		md5_update_private(&ctx, buf, WC_MD5_CHECK_SIZE);
-		md5_final(&ctx, out);
-		// check if it matches with digest
-		flag = 0;
-		#pragma unroll 16
-		for (int i = 0; i < 16; ++i)
-			flag |= (dig[i] - out[i]);
-		if (flag == 0) {
-			if (matches[0].s0 == 0) {
-				matches[0] = vload16(0, buf);
-			}
-			break;
+	md5_init(&ctx);
+	md5_update_private(&ctx, buf, WC_MD5_CHECK_SIZE);
+	md5_final(&ctx, out);
+	// check if it matches with digest
+	flag = 0;
+	#pragma unroll 16
+	for (int i = 0; i < 16; ++i)
+		flag |= (dig[i] - out[i]);
+	if (flag == 0) {
+		if (matches[0].s0 == 0) {
+			matches[0] = vload16(0, buf);
 		}
 	}
 }

@@ -42,7 +42,6 @@ struct wc_arguments {
 	uint8_t nchars; // a single byte can have values 0-255
 	char *md5sum;
 	char *prefix;
-	uint8_t old;
 };
 
 int wc_arguments_usage(const char *app)
@@ -69,7 +68,6 @@ int wc_arguments_usage(const char *app)
 			wc_util_charset_tostring(WC_UTIL_CHARSET_DIGIT),
 			wc_util_charset_tostring(WC_UTIL_CHARSET_SPECIAL),
 			wc_util_charset_tostring(WC_UTIL_CHARSET_ALNUMSPL));
-	printf("\n\t-O\t\tUse old cracking method.\n");
 	printf("\n");
 	exit(1);
 }
@@ -88,9 +86,8 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 	args->nchars = 8;
 	args->md5sum = NULL;
 	args->prefix = NULL;
-	args->old = 0;
 	appname = WC_BASENAME(argv[0]);
-	while ((opt = getopt(argc, argv, "hgcOm:f:M:p:C:N:")) != -1) {
+	while ((opt = getopt(argc, argv, "hgcm:f:M:p:C:N:")) != -1) {
 		switch (opt) {
 		case 'f':
 			args->cl_filename = wc_util_strdup(optarg);
@@ -107,9 +104,6 @@ int wc_arguments_parse(int argc, char **argv, struct wc_arguments *args)
 			break;
 		case 'g':
 			args->device_flag = WC_DEVICE_GPU;
-			break;
-		case 'O':
-			args->old = 1;
 			break;
 		case 'M':
 			/* each byte is represented as 2 characters */
@@ -178,8 +172,6 @@ void wc_arguments_dump(const struct wc_arguments *args)
 			WC_INFO("Will try to crack MD5 sum: %s\n", args->md5sum);
 		if (args->prefix)
 			WC_INFO("Will use prefix: %s\n", args->prefix);
-		if (args->old)
-			WC_INFO("Will use old method\n");
 	}
 }
 
@@ -229,162 +221,6 @@ char *wc_md5_create_buildopts(uint8_t nchars)
 		}
 	}
 	return NULL;
-}
-
-int wc_md5_checker_old(wc_runtime_t *wc, const char *md5sum, const char *prefix,
-		wc_util_charset_t charset, const uint8_t nchars)
-{
-	cl_int rc = CL_SUCCESS;
-	uint32_t idx;
-	cl_ulong max_possibilities = 0;
-	cl_uchar16 input;
-	cl_uchar16 digest;
-	size_t pfxlen = 0;
-	uint8_t zchars = 0;
-
-	cl_ulong charset_sz = wc_util_charset_size(charset);
-	if (!md5sum || !wc_runtime_is_usable(wc) || (nchars < 1) || (nchars >= 16))
-		return -1;
-	if (strlen(md5sum) != (2 * MD5_DIGEST_LENGTH))
-		return -1;
-	pfxlen = prefix ? strlen(prefix) : 0;
-	if (pfxlen >= nchars) {
-		WC_WARN("Input string is already complete. Max length accepted is %d\n",
-				(int)nchars);
-		return -1;
-	}
-	zchars = nchars - (uint8_t)pfxlen;
-	max_possibilities = wc_md5_possibilities(charset, zchars);
-	if (max_possibilities == 0) {
-		WC_WARN("Max possibilities was calculated to be 0 for %s of %d chars\n",
-				wc_util_charset_tostring(charset), (int)zchars);
-		return -1;
-	}
-	WC_INFO("Max possibilities: %lu\n", (unsigned long)max_possibilities);
-	// copy the initial input
-	memset(&input, 0, sizeof(input));
-	for (idx = 0; idx < pfxlen; ++idx)
-		input.s[idx] = (cl_uchar)prefix[idx];
-	// convert md5sum text to a digest
-	memset(&digest, 0, sizeof(digest));
-	for (idx = 0; idx < 2 * MD5_DIGEST_LENGTH; idx += 2)
-		digest.s[idx >> 1] = (wc_md5_decoder[(int)md5sum[idx]] << 4) |
-							wc_md5_decoder[(int)md5sum[idx + 1]];
-	// for each device
-	// check workgroup size and select number of parallel executions per kernel
-	// invocation
-	// check maximum number of kernel invocations needed
-	//
-	for (idx = 0; idx < wc->device_max; ++idx) {
-		cl_kernel kernel = (cl_kernel)0;
-		cl_mem matches_mem = (cl_mem)0;
-		cl_uchar16 match;
-		wc_device_t *dev = &wc->devices[idx];
-		wc_platform_t *plat = NULL;
-		cl_ulong max_kernel_calls = 0;
-		const size_t localmem_per_kernel = 32; // local mem used per kernel call
-		// max tries allowed based on local memory availability
-		size_t parallel_tries = dev->localmem_sz / localmem_per_kernel;
-		cl_ulong kdx;
-		struct timeval tv1, tv2;
-		float progress = 0.0;
-		double ttinterval = -1.0;
-		if (dev->pl_index >= wc->platform_max) {
-			WC_ERROR("Invalid platform index for device.\n");
-			break;
-		}
-		plat = &wc->platforms[dev->pl_index];
-		// if the max parallel tries < max workgroups then use the max parallel
-		// tries else use max workgroups
-		if (parallel_tries > dev->workgroup_sz)
-			parallel_tries = dev->workgroup_sz;
-		parallel_tries *= dev->compute_units;
-		if (max_possibilities <= parallel_tries) {
-			max_kernel_calls = 1;
-			parallel_tries = max_possibilities;
-		} else {
-			// find the ceiling maximum number of kernel calls needed
-			max_kernel_calls = (cl_ulong)(max_possibilities / parallel_tries) +
-				((max_possibilities % parallel_tries) ? 1 : 0);
-		}
-		WC_INFO("For device[%u] Parallel tries: %lu Kernel calls: %lu\n", idx,
-				parallel_tries, (unsigned long)max_kernel_calls);
-		// create the kernel program and the buffers
-		kernel = clCreateKernel(plat->program, wc_md5_cl_kernel, &rc);
-		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
-		matches_mem = clCreateBuffer(plat->context, CL_MEM_READ_WRITE,
-				sizeof(cl_uchar16), NULL, &rc);
-		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-		wc_util_timeofday(&tv1);
-		// invoke the kernel as many times as needed
-		// check the matched output to see if anything worked in each kernel
-		// call. break if it worked else continue.
-		// cleanup memory and kernel code
-		progress = 0.0;
-		for (kdx = 0; kdx < max_kernel_calls; kdx += charset_sz) {
-			const cl_uint workdim = 1;
-			size_t local_work_size = 1;
-			size_t global_work_size = parallel_tries;
-			cl_ulong stride = parallel_tries;
-			uint32_t argc = 0;
-			cl_ulong2 index_range;
-			cl_uint charset_type = (cl_uint)charset;
-			float cur_progress = 0;
-
-			index_range.s[0] = kdx;
-			index_range.s[1] = ((kdx + charset_sz) < max_kernel_calls) ?
-							(kdx + charset_sz) : max_kernel_calls;
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &input);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uchar16), &digest);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_mem), &matches_mem);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_uint), &charset_type);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong), &stride);
-			rc |= clSetKernelArg(kernel, argc++, sizeof(cl_ulong2),
-					&index_range);
-			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
-			memset(&match, 0, sizeof(match));
-			rc = clEnqueueWriteBuffer(dev->cmdq, matches_mem, CL_FALSE, 0,
-					sizeof(cl_uchar16), &match, 0, NULL, NULL);
-			WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
-			rc = clEnqueueNDRangeKernel(dev->cmdq, kernel, workdim, NULL,
-					&global_work_size, &local_work_size, 0, NULL, NULL);
-			WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
-			rc = clEnqueueReadBuffer(dev->cmdq, matches_mem, CL_TRUE, 0,
-					sizeof(cl_uchar16), &match, 0, NULL, NULL);
-			WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
-			rc = clFlush(dev->cmdq);
-			WC_ERROR_OPENCL_BREAK(clFlush, rc);
-			if (match.s[0] != 0) {
-				int8_t l = 0;
-				wc_util_timeofday(&tv2);
-				WC_INFO("Found match in %luth kernel call: ",
-						(unsigned long)kdx);
-				for (l = 0; l < nchars; ++l)
-					WC_NULL("%c", match.s[l]);
-				WC_NULL("\n");
-				WC_INFO("Time taken for finding match: %lfs\n",
-						WC_TIME_TAKEN(tv1, tv2));
-				break;
-			}
-			cur_progress = (float)((kdx * 100.0) / max_kernel_calls);
-			if ((cur_progress - progress) >= 1.0) {
-				progress = cur_progress;
-				if (ttinterval < 0.0) {
-					wc_util_timeofday(&tv2);
-					ttinterval = WC_TIME_TAKEN(tv1, tv2);
-				}
-				WC_INFO("Progress: %.02f%% Estimated Remaining Time: %lfs\n",
-						progress, ttinterval * (100.0 - progress));
-			}
-		}
-		if (match.s[0] == 0)
-			WC_INFO("Unable to find a match.\n");
-		if (kernel)
-			rc |= clReleaseKernel(kernel);
-		if (matches_mem)
-			rc |= clReleaseMemObject(matches_mem);
-	}
-	return (rc == CL_SUCCESS) ? 0 : -1;
 }
 
 int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
@@ -442,8 +278,6 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 	do {
 		cl_ulong max_kernel_calls = 0;
 		cl_uint charset_type = (cl_uint)charset;
-		cl_ulong stride = 0;
-		cl_ulong2 index_range;
 		size_t global_work_offset[1] = { 0 };
 		size_t global_work_size[1] = { 0 };
 		cl_ulong kdx;
@@ -523,9 +357,6 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			total_parallel_tries += parallel_tries[idx];
 			// now we assign the arguments to each kernel
 			argc = 0;
-			index_range.s[0] = 0;
-			index_range.s[1] = 1;
-			stride = 0;
 			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uchar16),
 					&input);
 			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uchar16),
@@ -534,10 +365,6 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 					&match_mems[idx]);
 			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uint),
 					&charset_type);
-			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_ulong),
-					&stride);
-			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_ulong2),
-					&index_range);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 		}
 		if (rc < 0)
@@ -710,14 +537,8 @@ int main(int argc, char **argv)
 					args.cl_filename ? args.cl_filename : WC_MD5_CL);
 			break;
 		}
-		if (args.old) {
-			rc = wc_md5_checker_old(wc, args.md5sum, args.prefix, args.charset,
-				args.nchars);
-		} else {
-			rc = wc_md5_checker(wc, args.md5sum, args.prefix, args.charset,
-				args.nchars);
-
-		}
+		rc = wc_md5_checker(wc, args.md5sum, args.prefix, args.charset,
+							args.nchars);
 		if (rc < 0) {
 			WC_ERROR("Unable to verify MD5 sums.\n");
 			break;
