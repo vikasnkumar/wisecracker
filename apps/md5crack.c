@@ -559,8 +559,10 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		progress = 0.0;
 		for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
 			float cur_progress = 0.0;
+			cl_uint event_count = 0;
 			// zero out the matches buffer
 			memset(matches, 0, sizeof(cl_uchar16) * wc->device_max);
+			memset(dev_events, 0, sizeof(cl_event) * wc->device_max);
 			// enqueue all the required calls for every device
 			for (idx = 0; idx < wc->device_max; ++idx) {
 				const cl_uint workdim = 1;
@@ -578,10 +580,9 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 						0, NULL, NULL);
 				WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
 				// enqueue the mem-read for the device
-				dev_events[idx] = (cl_event)0;
 				rc = clEnqueueReadBuffer(dev->cmdq, match_mems[idx], CL_FALSE,
 						0, sizeof(cl_uchar16), &matches[idx], 0, NULL,
-						&dev_events[idx]);
+						&dev_events[event_count++]);
 				WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
 				rc = clFlush(dev->cmdq);
 				WC_ERROR_OPENCL_BREAK(clFlush, rc);
@@ -592,9 +593,9 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			if (rc < 0)
 				break;
 			// wait for all the devices to complete work FIXME: inefficient
-			rc = clWaitForEvents(wc->device_max, dev_events);
+			rc = clWaitForEvents(event_count, dev_events);
 			WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
-			for (idx = 0; idx < wc->device_max; ++idx) {
+			for (idx = 0; idx < event_count; ++idx) {
 				rc |= clReleaseEvent(dev_events[idx]);
 				dev_events[idx] = (cl_event)0;
 			}

@@ -306,7 +306,7 @@ wc_runtime_t *wc_runtime_create(uint32_t flag, uint32_t max_devices,
 				break;
 			memset(devids, 0, sizeof(cl_device_id) * total_devnum);
 			// we only want devnum devices
-			rc = clGetDeviceIDs(plids[idx], devtype, devnum, devids, &devnum);
+			rc = clGetDeviceIDs(plids[idx], devtype, devnum, devids, NULL);
 			WC_ERROR_OPENCL_BREAK(clGetDeviceIDs, rc);
 			// create context for all devices for this platform
 			// NOTE: we cannot create multiple platform context since vendors
