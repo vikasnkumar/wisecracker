@@ -312,6 +312,8 @@ int main(int argc, char **argv)
 	wc = wc_runtime_create(args.device_flag, args.max_devices, 0);
 	assert(wc != NULL);
 	wc_runtime_dump(wc);
+	WC_INFO("Minimum address bits %u\n",
+			wc_runtime_min_device_address_bits(wc));
 
 	do {
 		rc = wc_runtime_program_load(wc, (const char *)code, codelen, NULL);

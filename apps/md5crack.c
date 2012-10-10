@@ -285,7 +285,21 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		float progress = 0.0;
 		double ttinterval = -1.0;
 		cl_int found = -1; // index of matches which has the result
+		// this is needed since devices can be 32-bit or 64-bit
+		cl_ulong stride = 0;
+		cl_uint argc_stride = 0;
+		cl_ulong global_work_offset_limit[1] = { 0 };
+		cl_uint addrbits = wc_runtime_min_device_address_bits(wc);
 
+		if (addrbits == sizeof(cl_uint) * CL_CHAR_BIT) {
+			global_work_offset_limit[0] = CL_UINT_MAX;
+		} else if (addrbits == sizeof(cl_ulong) * CL_CHAR_BIT) {
+			global_work_offset_limit[0] = CL_ULONG_MAX;
+		} else {
+			WC_ERROR("Address bits %u is unacceptable\n", addrbits);
+			rc = -1;
+			break;
+		}
 		kernels = WC_MALLOC(sizeof(cl_kernel) * wc->device_max);
 		if (!kernels) {
 			WC_ERROR_OUTOFMEMORY(sizeof(cl_kernel) * wc->device_max);
@@ -365,6 +379,11 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 					&match_mems[idx]);
 			rc |= clSetKernelArg(kernels[idx], argc++, sizeof(cl_uint),
 					&charset_type);
+			// store the stride argument
+			argc_stride = argc;
+			stride = 0;
+			rc |= clSetKernelArg(kernels[idx], argc_stride, sizeof(cl_ulong),
+					&stride);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 		}
 		if (rc < 0)
@@ -414,8 +433,18 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				rc = clFlush(dev->cmdq);
 				WC_ERROR_OPENCL_BREAK(clFlush, rc);
 				global_work_offset[0] += global_work_size[0];
+				// if we have reached the max possibilities let's break
 				if (global_work_offset[0] >= max_possibilities)
 					break;
+				// check for global_work_offset_limit here and adjust stride
+				if (global_work_offset[0] >= global_work_offset_limit[0]) {
+					stride += global_work_offset_limit[0];
+					global_work_offset[0] -= global_work_offset_limit[0];
+					// do we need to set the kernel arg again ?
+					rc |= clSetKernelArg(kernels[idx], argc_stride,
+							sizeof(cl_ulong), &stride);
+					WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
+				}
 			}
 			if (rc < 0) {
 				WC_ERROR("Errored out in the %luth kernel\n", kdx);

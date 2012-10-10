@@ -502,7 +502,8 @@ __constant ulong WC_DIVISORS_ALNUMSPL[] = {
 __kernel void wc_md5sum_check(uchar16 input, /* starting portion of the string */
 					uchar16 digest, /* MD5 digest to compare */
 					__global uchar16 *matches, /* matching string output */
-					uint charset_type /* charset type */
+					uint charset_type, /* charset type */
+					ulong stride
 					)
 {
 	__constant ulong *divisors = WC_DIVISORS_ALNUMSPL;
@@ -546,7 +547,7 @@ __kernel void wc_md5sum_check(uchar16 input, /* starting portion of the string *
 	uchar buf[16]; // max allowed
 	uchar indices[16]; // each value is in [0. 94) so uchar is enough
 	short flag;
-	ulong id = get_global_id(0);
+	ulong id = get_global_id(0) + stride;
 	#pragma unroll WC_MD5_CHECK_SIZE
 	for (int i = 0; i < WC_MD5_CHECK_SIZE; ++i) {
 		indices[i] = (id / divisors[i]) % charset_sz;

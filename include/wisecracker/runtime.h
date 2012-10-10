@@ -87,6 +87,8 @@ WCDLL int wc_runtime_program_load(wc_runtime_t *wc, const char *src, size_t len,
 
 WCDLL uint8_t wc_runtime_is_usable(const wc_runtime_t *wc);
 	
+WCDLL cl_uint wc_runtime_min_device_address_bits(const wc_runtime_t *wc);
+
 EXTERN_C_END
 
 #endif //__WISECRACKER_RUNTIME_H__

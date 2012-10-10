@@ -633,3 +633,16 @@ uint8_t wc_runtime_is_usable(const wc_runtime_t *wc)
 	return (wc && wc->devices && wc->device_max > 0 && wc->platforms &&
 			wc->platform_max > 0) ? 1 : 0;
 }
+
+cl_uint wc_runtime_min_device_address_bits(const wc_runtime_t *wc)
+{
+	cl_uint addrbits = sizeof(size_t) * CL_CHAR_BIT; // minimum assumed
+	if (wc_runtime_is_usable(wc)) {
+		cl_uint idx;
+		for (idx = 0; idx < wc->device_max; ++idx) {
+			if (wc->devices[idx].address_bits < addrbits)
+				addrbits = wc->devices[idx].address_bits;
+		}
+	}
+	return addrbits;
+}
