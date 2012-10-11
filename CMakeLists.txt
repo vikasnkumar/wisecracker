@@ -35,6 +35,7 @@ include(CheckLibraryExists)
 include(CheckTypeSize)
 include(CheckFunctionExists)
 option(USE_OPENSSL "Use OpenSSL" ON)
+option(USE_MPI "Use MPI" ON)
 
 # Custom includes
 set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)
@@ -45,6 +46,7 @@ if (WIN32)
 else (WIN32)
 	include(deps/opencl.cmake)
 endif (WIN32)
+include(deps/mpi.cmake)
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)
 include_directories(${CMAKE_CURRENT_BINARY_DIR}/include)
