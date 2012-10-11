@@ -300,6 +300,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			rc = -1;
 			break;
 		}
+		WC_DEBUG("work offset limit: %lu\n", global_work_offset_limit[0]);
 		kernels = WC_MALLOC(sizeof(cl_kernel) * wc->device_max);
 		if (!kernels) {
 			WC_ERROR_OUTOFMEMORY(sizeof(cl_kernel) * wc->device_max);
@@ -416,6 +417,22 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				global_work_size[0] = parallel_tries[idx];
 //				WC_DEBUG("Work offset: %lu size: %lu for device[%u]\n",
 //						global_work_offset[0], global_work_size[0], idx);
+				// check for global_work_offset_limit here and adjust stride
+				if ((global_work_offset[0] + global_work_size[0]) >=
+							global_work_offset_limit[0]) {
+					WC_DEBUG("Work offset: %lu size: %lu for device[%u]\n",
+						global_work_offset[0], global_work_size[0], idx);
+					stride += global_work_offset_limit[0];
+					global_work_offset[0] = global_work_offset[0] +
+								global_work_size[0] -
+								global_work_offset_limit[0];
+					rc |= clSetKernelArg(kernels[idx], argc_stride,
+							sizeof(cl_ulong), &stride);
+					WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
+					WC_DEBUG("Global work offset reset to %lu. Stride: %lu\n",
+						global_work_offset[0], stride);
+					WC_DEBUG("Reset for kernel number: %lu\n", kdx);
+				}
 				// enqueue the mem-write for the device
 				rc = clEnqueueWriteBuffer(dev->cmdq, match_mems[idx], CL_FALSE,
 						0, sizeof(cl_uchar16), &matches[idx], 0, NULL, NULL);
@@ -434,17 +451,8 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				WC_ERROR_OPENCL_BREAK(clFlush, rc);
 				global_work_offset[0] += global_work_size[0];
 				// if we have reached the max possibilities let's break
-				if (global_work_offset[0] >= max_possibilities)
+				if ((global_work_offset[0] + stride) >= max_possibilities)
 					break;
-				// check for global_work_offset_limit here and adjust stride
-				if (global_work_offset[0] >= global_work_offset_limit[0]) {
-					stride += global_work_offset_limit[0];
-					global_work_offset[0] -= global_work_offset_limit[0];
-					// do we need to set the kernel arg again ?
-					rc |= clSetKernelArg(kernels[idx], argc_stride,
-							sizeof(cl_ulong), &stride);
-					WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
-				}
 			}
 			if (rc < 0) {
 				WC_ERROR("Errored out in the %luth kernel\n", kdx);
