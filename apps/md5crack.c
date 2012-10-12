@@ -241,6 +241,7 @@ void CL_CALLBACK wc_md5_event_notify(cl_event ev, cl_int status, void *user)
 {
 	wc_md5_kernelcall_t *kcall = (wc_md5_kernelcall_t *)user;
 	if (kcall && wc_md5_found < 0) {
+		uint8_t set_event = 0;
 		// check for matches here
 		if (kcall->match.s[0] != 0) {
 			int8_t l = 0;
@@ -249,23 +250,24 @@ void CL_CALLBACK wc_md5_event_notify(cl_event ev, cl_int status, void *user)
 				WC_NULL("%c", kcall->match.s[l]);
 			WC_NULL("\n");
 			wc_md5_found = kcall->counter;
+			set_event = 1;
 		}
 		do {
 			cl_int rc = CL_SUCCESS;
-//			cl_uint refcount = 0;
+			cl_uint refcount = 0;
 			if (!kcall->userevent)
 				break;
 			// reduce the reference count until it hits 1
 			rc = clReleaseEvent(kcall->userevent);
 			WC_ERROR_OPENCL_BREAK(clReleaseEvent, rc);
 			//NOTE: AMD doesn't decrement correctly so we dont use it
-//			rc = clGetEventInfo(kcall->userevent, CL_EVENT_REFERENCE_COUNT,
-//					sizeof(cl_uint), &refcount, NULL);
-//			WC_ERROR_OPENCL_BREAK(clGetEventInfo, rc);
+			rc = clGetEventInfo(kcall->userevent, CL_EVENT_REFERENCE_COUNT,
+					sizeof(cl_uint), &refcount, NULL);
+			WC_ERROR_OPENCL_BREAK(clGetEventInfo, rc);
 			wc_md5_refcount--;
 //			WC_DEBUG("wrefcount=%ld erefcount=%u\n", wc_md5_refcount, refcount);
 			// the reference count has hit 1
-			if (wc_md5_refcount == 0) {
+			if (refcount == 1 || wc_md5_refcount == 0 || set_event) {
 //				WC_DEBUG("setting the user event\n");
 				rc = clSetUserEventStatus(kcall->userevent, CL_COMPLETE);
 				if (rc != CL_SUCCESS)
