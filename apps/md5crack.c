@@ -235,6 +235,7 @@ typedef struct {
 } wc_md5_kernelcall_t;
 
 static cl_long wc_md5_found = -1;
+static cl_long wc_md5_refcount = 0;
 
 void CL_CALLBACK wc_md5_event_notify(cl_event ev, cl_int status, void *user)
 {
@@ -256,13 +257,16 @@ void CL_CALLBACK wc_md5_event_notify(cl_event ev, cl_int status, void *user)
 				break;
 			// reduce the reference count until it hits 1
 			rc = clReleaseEvent(kcall->userevent);
-			WC_ERROR_OPENCL_BREAK(clSetUserEventStatus, rc);
-			rc = clGetEventInfo(kcall->userevent, CL_EVENT_REFERENCE_COUNT,
-					sizeof(cl_uint), &refcount, NULL);
-			WC_ERROR_OPENCL_BREAK(clGetEventInfo, rc);
+			WC_ERROR_OPENCL_BREAK(clReleaseEvent, rc);
+			//NOTE: AMD doesn't decrement correctly so we dont use it
+//			rc = clGetEventInfo(kcall->userevent, CL_EVENT_REFERENCE_COUNT,
+//					sizeof(cl_uint), &refcount, NULL);
+//			WC_ERROR_OPENCL_BREAK(clGetEventInfo, rc);
+			wc_md5_refcount--;
+//			WC_DEBUG("wrefcount=%ld erefcount=%u\n", wc_md5_refcount, refcount);
 			// the reference count has hit 1
-			if (refcount == 1) {
-				//WC_DEBUG("setting the user event\n");
+			if (wc_md5_refcount == 0) {
+//				WC_DEBUG("setting the user event\n");
 				rc = clSetUserEventStatus(kcall->userevent, CL_COMPLETE);
 				if (rc != CL_SUCCESS)
 					WC_ERROR_OPENCL(clSetUserEventStatus, rc);
@@ -433,8 +437,28 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			cl_event user_event = (cl_event)0;
 			memset(dev_events, 0, sizeof(*dev_events) * wc->device_max);
 			// create a user event with any 1 platform's context
-			user_event = clCreateUserEvent(wc->platforms[0].context, &rc);
-			WC_ERROR_OPENCL_BREAK(clCreateUserEvent, rc);
+			for (idx = 0; idx < wc->device_max; ++idx) {
+				wc_device_t *dev = &wc->devices[idx];
+				wc_platform_t *plat = NULL;
+				if (dev->pl_index >= wc->platform_max) {
+					WC_ERROR("Invalid device platform index.\n");
+					rc = -1;
+					break;
+				}
+				plat = &wc->platforms[dev->pl_index];
+				user_event = clCreateUserEvent(plat->context, &rc);
+				if (rc == CL_SUCCESS)
+					break;
+				else
+					WC_ERROR_OPENCL(clCreateUserEvent, rc);
+			}
+			if (user_event == (cl_event)0) {
+				WC_ERROR("Unable to create a user event.\n");
+				rc = -1;
+				break;
+			}
+			rc = CL_SUCCESS;
+			wc_md5_refcount = 0;
 			// enqueue all the required calls for every device
 			for (idx = 0; idx < wc->device_max; ++idx) {
 				const cl_uint workdim = 1;
@@ -478,6 +502,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				kcall[idx].userevent = user_event;
 				rc = clRetainEvent(user_event);
 				WC_ERROR_OPENCL_BREAK(clRetainEvent, rc);
+				wc_md5_refcount++;
 				rc = clSetEventCallback(dev_events[event_count], CL_COMPLETE,
 						wc_md5_event_notify, &kcall[idx]);
 				WC_ERROR_OPENCL_BREAK(clSetEventCallback, rc);
