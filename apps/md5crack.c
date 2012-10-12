@@ -252,7 +252,7 @@ void CL_CALLBACK wc_md5_event_notify(cl_event ev, cl_int status, void *user)
 		}
 		do {
 			cl_int rc = CL_SUCCESS;
-			cl_uint refcount = 0;
+//			cl_uint refcount = 0;
 			if (!kcall->userevent)
 				break;
 			// reduce the reference count until it hits 1
@@ -532,6 +532,8 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			}
 			if (wc_md5_found >= 0) {
 				rc = CL_SUCCESS;
+				wc_util_timeofday(&tv2);
+				WC_INFO("Time taken: %lfs\n", WC_TIME_TAKEN(tv1, tv2));
 				break;
 			}
 			cur_progress = (float)((kdx * 100.0) / max_kernel_calls);
