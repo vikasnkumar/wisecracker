@@ -228,7 +228,48 @@ typedef struct {
 	cl_mem mem; // memory buffer
 	cl_uchar16 match; // buffer to store output
 	cl_ulong parallel_tries; // no. of tries per call
+	uint8_t nchars; // max value is 16
+	// for the callback
+	cl_ulong counter; // current kernel count
+	cl_event userevent; // user event
 } wc_md5_kernelcall_t;
+
+static cl_long wc_md5_found = -1;
+
+void CL_CALLBACK wc_md5_event_notify(cl_event ev, cl_int status, void *user)
+{
+	wc_md5_kernelcall_t *kcall = (wc_md5_kernelcall_t *)user;
+	if (kcall && wc_md5_found < 0) {
+		// check for matches here
+		if (kcall->match.s[0] != 0) {
+			int8_t l = 0;
+			WC_INFO("Found match in %luth kernel call: ", kcall->counter);
+			for (l = 0; l < kcall->nchars; ++l)
+				WC_NULL("%c", kcall->match.s[l]);
+			WC_NULL("\n");
+			wc_md5_found = kcall->counter;
+		}
+		do {
+			cl_int rc = CL_SUCCESS;
+			cl_uint refcount = 0;
+			if (!kcall->userevent)
+				break;
+			// reduce the reference count until it hits 1
+			rc = clReleaseEvent(kcall->userevent);
+			WC_ERROR_OPENCL_BREAK(clSetUserEventStatus, rc);
+			rc = clGetEventInfo(kcall->userevent, CL_EVENT_REFERENCE_COUNT,
+					sizeof(cl_uint), &refcount, NULL);
+			WC_ERROR_OPENCL_BREAK(clGetEventInfo, rc);
+			// the reference count has hit 1
+			if (refcount == 1) {
+				//WC_DEBUG("setting the user event\n");
+				rc = clSetUserEventStatus(kcall->userevent, CL_COMPLETE);
+				if (rc != CL_SUCCESS)
+					WC_ERROR_OPENCL(clSetUserEventStatus, rc);
+			}
+		} while (0);
+	}
+}
 
 int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		wc_util_charset_t charset, const uint8_t nchars)
@@ -288,7 +329,6 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		struct timeval tv1, tv2;
 		float progress = 0.0;
 		double ttinterval = -1.0;
-		cl_int found = -1; // index of matches which has the result
 		// this is needed since devices can be 32-bit or 64-bit
 		cl_ulong stride = 0;
 		cl_uint argc_stride = 0;
@@ -331,6 +371,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				break;
 			}
 			plat = &wc->platforms[dev->pl_index];
+			kcall[idx].nchars = nchars;
 			// create the kernel and memory objects per device
 			kcall[idx].kernel = clCreateKernel(plat->program, wc_md5_cl_kernel,
 								&rc);
@@ -385,18 +426,22 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				total_parallel_tries);
 		global_work_offset[0] = 0;
 		wc_util_timeofday(&tv1);
-		found = -1;
 		progress = 0.0;
 		for (kdx = 0; kdx < max_kernel_calls; ++kdx) {
 			float cur_progress = 0.0;
 			cl_uint event_count = 0;
+			cl_event user_event = (cl_event)0;
 			memset(dev_events, 0, sizeof(*dev_events) * wc->device_max);
+			// create a user event with any 1 platform's context
+			user_event = clCreateUserEvent(wc->platforms[0].context, &rc);
+			WC_ERROR_OPENCL_BREAK(clCreateUserEvent, rc);
 			// enqueue all the required calls for every device
 			for (idx = 0; idx < wc->device_max; ++idx) {
 				const cl_uint workdim = 1;
 				wc_device_t *dev = &wc->devices[idx];
 				global_work_size[0] = kcall[idx].parallel_tries;
 				memset(&kcall[idx].match, 0, sizeof(cl_uchar16));
+				kcall[idx].counter = kdx;
 //				WC_DEBUG("Work offset: %lu size: %lu for device[%u]\n",
 //						global_work_offset[0], global_work_size[0], idx);
 				// check for global_work_offset_limit here and adjust stride
@@ -427,8 +472,18 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				// enqueue the mem-read for the device
 				rc = clEnqueueReadBuffer(dev->cmdq, kcall[idx].mem, CL_FALSE,
 						0, sizeof(cl_uchar16), &kcall[idx].match, 0, NULL,
-						&dev_events[event_count++]);
+						&dev_events[event_count]);
 				WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
+				// add reference count for the event
+				kcall[idx].userevent = user_event;
+				rc = clRetainEvent(user_event);
+				WC_ERROR_OPENCL_BREAK(clRetainEvent, rc);
+				rc = clSetEventCallback(dev_events[event_count], CL_COMPLETE,
+						wc_md5_event_notify, &kcall[idx]);
+				WC_ERROR_OPENCL_BREAK(clSetEventCallback, rc);
+				rc = clEnqueueWaitForEvents(dev->cmdq, 1, &dev_events[event_count]);
+				WC_ERROR_OPENCL_BREAK(clEnqueueWaitForEvents, rc);
+				event_count++;
 				rc = clFlush(dev->cmdq);
 				WC_ERROR_OPENCL_BREAK(clFlush, rc);
 				global_work_offset[0] += global_work_size[0];
@@ -440,30 +495,17 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 				WC_ERROR("Errored out in the %luth kernel\n", kdx);
 				break;
 			}
-			// wait for all the devices to complete work FIXME: inefficient
-			rc = clWaitForEvents(event_count, dev_events);
+			// now let's wait for the user event to hit
+			rc = clWaitForEvents(1, &user_event);
 			WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
+			// this will only get here when reference count is 1.
+			rc |= clReleaseEvent(user_event);
+			user_event = (cl_event)0;
 			for (idx = 0; idx < event_count; ++idx) {
 				rc |= clReleaseEvent(dev_events[idx]);
 				dev_events[idx] = (cl_event)0;
 			}
-			// ok now check for matches
-			for (idx = 0; idx < wc->device_max; ++idx) {
-				if (kcall[idx].match.s[0] != 0) {
-					int8_t l = 0;
-					wc_util_timeofday(&tv2);
-					WC_INFO("Found match in %luth kernel call: ",
-							(unsigned long)kdx);
-					for (l = 0; l < nchars; ++l)
-						WC_NULL("%c", kcall[idx].match.s[l]);
-					WC_NULL("\n");
-					WC_INFO("Time taken for finding match: %lfs\n",
-							WC_TIME_TAKEN(tv1, tv2));
-					found = idx;
-					break;
-				}
-			}
-			if (found >= 0) {
+			if (wc_md5_found >= 0) {
 				rc = CL_SUCCESS;
 				break;
 			}
@@ -480,7 +522,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 		}
 		if (rc < 0)
 			break;
-		if (found < 0) {
+		if (wc_md5_found < 0) {
 			WC_INFO("Unable to find a match.\n");
 		}
 	} while (0);
