@@ -242,21 +242,10 @@ void CL_CALLBACK wc_md5_event_notify(cl_event ev, cl_int status, void *user)
 	wc_md5_kernelcall_t *kcall = (wc_md5_kernelcall_t *)user;
 	if (!kcall)
 		return;
-	// check for matches here
-	if (wc_md5_found < 0) {
-		if (kcall->match.s[0] != 0) {
-			int8_t l = 0;
-			WC_INFO("Found match in %luth kernel call: ", kcall->counter);
-			for (l = 0; l < kcall->nchars; ++l)
-				WC_NULL("%c", kcall->match.s[l]);
-			WC_NULL("\n");
-			wc_md5_found = kcall->counter;
-		}
-	}
 	do {
 		cl_int rc = CL_SUCCESS;
 		cl_uint refcount = 0;
-		if (!kcall->userevent)
+		if (!kcall || !kcall->userevent)
 			break;
 		// reduce the reference count until it hits 1
 		rc = clReleaseEvent(kcall->userevent);
@@ -531,6 +520,19 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 			for (idx = 0; idx < event_count; ++idx) {
 				rc |= clReleaseEvent(dev_events[idx]);
 				dev_events[idx] = (cl_event)0;
+			}
+			// check for matches here
+			if (wc_md5_found < 0) {
+				for (idx = 0; idx < wc->device_max; ++idx) {
+					if (kcall[idx].match.s[0] != 0) {
+						int8_t l = 0;
+						WC_INFO("Found match in %luth kernel call: ", kcall[idx].counter);
+						for (l = 0; l < kcall[idx].nchars; ++l)
+							WC_NULL("%c", kcall[idx].match.s[l]);
+						WC_NULL("\n");
+						wc_md5_found = kcall[idx].counter;
+					}
+				}
 			}
 			if (wc_md5_found >= 0) {
 				rc = CL_SUCCESS;
