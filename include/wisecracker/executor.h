@@ -34,7 +34,8 @@ EXTERN_C_BEGIN
 #define WC_EXE_ERR_OPENCL -4
 #define WC_EXE_ERR_MPI -5
 #define WC_EXE_ERR_INVALID_PARAMETER -6
-#define WC_EXE_ERR_UNKNOWN -7
+#define WC_EXE_ERR_MISSING_CALLBACK -7
+#define WC_EXE_ERR_UNKNOWN INT_MIN
 
 typedef int wc_err_t;
 
@@ -57,6 +58,7 @@ typedef struct {
 	char *(*get_build_options)(const wc_exec_t *wc, void *user);
 	const char *(*get_kernel_name)(const wc_exec_t *wc, void *user);
 	uint64_t (*get_task_size)(const wc_exec_t *wc, void *user);
+	void (*on_code_compile)(const wc_exec_t *wc, void *user, uint8_t success);
 
 	wc_err_t (*on_kernel_init)(const wc_exec_t *wc, wc_device_t *dev, void *user);
 	wc_err_t (*on_kernel_finish)(const wc_exec_t *wc, wc_device_t *dev, void *user);

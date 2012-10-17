@@ -155,6 +155,7 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 
 enum {
 	WC_EXECSTATE_NOT_STARTED = 0,
+	WC_EXECSTATE_OPENCL_INITED,
 	WC_EXECSTATE_STARTED,
 	WC_EXECSTATE_GOT_CODE,
 	WC_EXECSTATE_GOT_BUILDOPTS,
@@ -170,6 +171,16 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
 		current_state = WC_EXECSTATE_NOT_STARTED;
+		if (!wc->ocl_initialized) {
+			if (wc_opencl_init(wc->cbs.device_type, wc->cbs.max_devices,
+						&wc->ocl) < 0) {
+				WC_ERROR("Failed to create local runtime on system\n");
+				rc = WC_EXE_ERR_OPENCL;
+				break;
+			}
+			wc->ocl_initialized = 1;
+		}
+		current_state = WC_EXECSTATE_OPENCL_INITED;
 		// call the on_start event
 		if (wc->cbs.on_start) {
 			rc = wc->cbs.on_start(wc, wc->cbs.user);
@@ -182,6 +193,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		// call the get_code function to retrieve the code
 		if (!wc->cbs.get_code) {
 			WC_ERROR("The get_code callback is missing\n");
+			rc = WC_EXE_ERR_MISSING_CALLBACK;
 			break;
 		} else {
 			wc->codelen = 0;
@@ -201,14 +213,29 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			}
 		}
 		current_state = WC_EXECSTATE_GOT_BUILDOPTS;
+		// ok compile the code now
+		if (wc_opencl_program_load(&wc->ocl, wc->code, wc->codelen,
+									wc->buildopts) < 0) {
+			WC_ERROR("Unable to compile OpenCL code.\n");
+			rc = WC_EXE_ERR_OPENCL;
+			if (wc->cbs.on_code_compile)
+				wc->cbs.on_code_compile(wc, wc->cbs.user, 0);
+			break;
+		}
+		if (wc->cbs.on_code_compile)
+			wc->cbs.on_code_compile(wc, wc->cbs.user, 1);
+		current_state = WC_EXECSTATE_COMPILED_CODE;
 	} while (0);
 	// call the on_finish event
 	if (current_state != WC_EXECSTATE_NOT_STARTED && wc->cbs.on_finish) {
-		rc = wc->cbs.on_finish(wc, wc->cbs.user);
-		if (rc != WC_EXE_OK) {
-			WC_ERROR("Error in on_finish callback: %d\n", rc);
+		int frc = wc->cbs.on_finish(wc, wc->cbs.user);
+		if (frc != WC_EXE_OK) {
+			WC_ERROR("Error in on_finish callback: %d\n", frc);
 		}
 		current_state = WC_EXECSTATE_FINISHED;
+		// if rc had an earlier value keep that
+		if (rc == WC_EXE_OK && frc != WC_EXE_OK)
+			rc = frc;
 	}
 	return rc;
 }

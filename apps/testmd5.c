@@ -299,6 +299,15 @@ wc_err_t testmd5_on_finish(const wc_exec_t *wc, void *user)
 	return WC_EXE_OK;
 }
 
+void testmd5_on_compile(const wc_exec_t *wc, void *user, uint8_t success)
+{
+	if (success) {
+		WC_DEBUG("Code has been compiled successfully\n");
+	} else {
+		WC_DEBUG("Code failed to compile\n");
+	}
+}
+
 char *testmd5_get_code(const wc_exec_t *wc, void *user, size_t *codelen)
 {
 	unsigned char *code = NULL;
@@ -372,6 +381,7 @@ int main(int argc, char **argv)
 		callbacks.get_code = testmd5_get_code;
 		callbacks.get_task_size = testmd5_get_tasksize;
 		callbacks.get_kernel_name = testmd5_get_kernelname;
+		callbacks.on_code_compile = testmd5_on_compile;
 		err = wc_executor_setup(wc, &callbacks);
 		assert(err == WC_EXE_OK);
 		if (err != WC_EXE_OK) {
