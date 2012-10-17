@@ -48,13 +48,15 @@ typedef enum {
 
 typedef struct {
 	void *user;
+	uint32_t max_devices;
+	wc_devtype_t device_type;
 	wc_err_t (*on_start)(const wc_exec_t *wc, void *user);
 	wc_err_t (*on_finish)(const wc_exec_t *wc, void *user);
 
 	char *(*get_code)(const wc_exec_t *wc, void *user, size_t *codelen);
 	char *(*get_build_options)(const wc_exec_t *wc, void *user);
-	size_t (*get_task_size)(const wc_exec_t *wc, void *user);
 	const char *(*get_kernel_name)(const wc_exec_t *wc, void *user);
+	uint64_t (*get_task_size)(const wc_exec_t *wc, void *user);
 
 	wc_err_t (*on_kernel_init)(const wc_exec_t *wc, wc_device_t *dev, void *user);
 	wc_err_t (*on_kernel_finish)(const wc_exec_t *wc, wc_device_t *dev, void *user);
@@ -63,8 +65,7 @@ typedef struct {
 	void (*progress)(float percent, void *user);
 } wc_exec_callbacks_t;
 
-WCDLL wc_exec_t *wc_executor_init(int *argc, char ***argv, wc_devtype_t devt,
-								uint32_t max_devices);
+WCDLL wc_exec_t *wc_executor_init(int *argc, char ***argv);
 
 WCDLL void wc_executor_destroy(wc_exec_t *wc);
 
@@ -75,6 +76,8 @@ WCDLL int wc_executor_peer_count(const wc_exec_t *wc);
 WCDLL int wc_executor_peer_id(const wc_exec_t *wc);
 
 WCDLL wc_err_t wc_executor_run(wc_exec_t *wc, long timeout);
+
+WCDLL void wc_executor_dump(const wc_exec_t *wc);
 
 EXTERN_C_END
 

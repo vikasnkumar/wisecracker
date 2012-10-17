@@ -44,6 +44,13 @@ if (USE_OPENSSL)
 	# this is needed since we link with static
 	set_target_properties(wctestmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
 	install(TARGETS wctestmd5 RUNTIME DESTINATION bin)
+
+	add_executable(testmd5 testmd5.c)
+	add_dependencies(testmd5 md5_cl.h)
+	target_link_libraries(testmd5 wisecracker_s ${OPENSSL_LIBRARIES})
+	# this is needed since we link with static
+	set_target_properties(testmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
+	install(TARGETS testmd5 RUNTIME DESTINATION bin)
 endif (USE_OPENSSL)
 
 set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES

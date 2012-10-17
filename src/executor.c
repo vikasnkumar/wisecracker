@@ -38,8 +38,7 @@ struct wc_executor_details {
 	char *buildopts;
 };
 
-wc_exec_t *wc_executor_init(int *argc, char ***argv, wc_devtype_t devt,
-							uint32_t max_devices)
+wc_exec_t *wc_executor_init(int *argc, char ***argv)
 {
 	int rc = 0;
 	wc_exec_t *wc = NULL;
@@ -67,13 +66,6 @@ wc_exec_t *wc_executor_init(int *argc, char ***argv, wc_devtype_t devt,
 			break;
 		}
 		wc->ocl_initialized = 0;
-		rc = wc_opencl_init(devt, max_devices, &wc->ocl);
-		if (rc < 0) {
-			WC_ERROR("Failed to create local runtime on system\n");
-			rc = -1;
-			break;
-		}
-		wc->ocl_initialized = 1;
 	} while (0);
 	if (rc < 0) {
 		if (wc && wc->mpi_initialized) {
@@ -126,6 +118,14 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 			WC_ERROR("Wisecracker needs the get_code, get_task_size and"
 					" get_kernel_name callbacks.\n");
 		} else {
+			if (!wc->ocl_initialized) {
+				if (wc_opencl_init(cbs->device_type, cbs->max_devices,
+						&wc->ocl) < 0) {
+					WC_ERROR("Failed to create local runtime on system\n");
+					return WC_EXE_ERR_OPENCL;
+				}
+			}
+			wc->ocl_initialized = 1;
 			// copy the pointers into an internal structure
 			memcpy(&(wc->cbs), cbs, sizeof(*cbs));
 			return WC_EXE_OK;
@@ -193,3 +193,6 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 	return rc;
 }
 
+void wc_executor_dump(const wc_exec_t *wc)
+{
+}

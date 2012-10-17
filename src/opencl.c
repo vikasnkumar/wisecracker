@@ -164,7 +164,7 @@ static int wc_opencl_device_info(wc_device_t *dev)
 	return (rc == CL_SUCCESS) ? 0 : -1;
 }
 
-int wc_opencl_create(wc_devtype_t devt, uint32_t max_devices,
+int wc_opencl_init(wc_devtype_t devt, uint32_t max_devices,
 					wc_opencl_t *ocl)
 {
 	cl_int rc = CL_SUCCESS;
