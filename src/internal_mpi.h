@@ -16,19 +16,22 @@
     along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 /*
- * Copyright: 2011-2012. Selective Intellect LLC. All Rights Reserved.
+ * Copyright: 2011. Selective Intellect LLC. All Rights Reserved.
  * Author: Vikas Kumar
- * Date: 21st Dec 2011
+ * Date: 16th Oct 2012
  * Software: WiseCracker
  */
-#ifndef __WISECRACKER_WISECRACKER_H__
-#define __WISECRACKER_WISECRACKER_H__
+#ifndef __WISECRACKER_MPI_INTERNAL_H__
+#define __WISECRACKER_MPI_INTERNAL_H__
 
-#include <wisecracker/config.h>
-#include <wisecracker/macros.h>
-#include <wisecracker/runtime.h>
-#include <wisecracker/executor.h>
-#include <wisecracker/utils.h>
+int wc_mpi_init(int *argc, char ***argv);
 
-#endif //__WISECRACKER_WISECRACKER_H__
+int wc_mpi_finalize();
 
+void wc_mpi_abort(int err);
+
+int wc_mpi_peer_count();
+
+int wc_mpi_peer_id();
+
+#endif // __WISECRACKER_MPI_INTERNAL_H__

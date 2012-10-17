@@ -65,7 +65,6 @@ typedef struct {
 	cl_uint device_max;
 } wc_runtime_t;
 
-
 #define WC_DEVICE_CPU 0x0
 #define WC_DEVICE_GPU 0x1
 #define WC_DEVICE_ANY 0x2
