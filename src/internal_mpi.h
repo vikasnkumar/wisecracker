@@ -24,6 +24,11 @@
 #ifndef __WISECRACKER_MPI_INTERNAL_H__
 #define __WISECRACKER_MPI_INTERNAL_H__
 
+#ifdef WC_MPI_H
+	#include <mpi.h>
+#else
+	#define MPI_INT (void *)0
+#endif
 int wc_mpi_init(int *argc, char ***argv);
 
 int wc_mpi_finalize();
@@ -33,5 +38,7 @@ void wc_mpi_abort(int err);
 int wc_mpi_peer_count();
 
 int wc_mpi_peer_id();
+
+int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id);
 
 #endif // __WISECRACKER_MPI_INTERNAL_H__

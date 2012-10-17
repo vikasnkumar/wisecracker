@@ -74,6 +74,14 @@ int wc_mpi_peer_id()
 	return (rc == MPI_SUCCESS) ? value : -1;
 }
 
+int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id)
+{
+	int rc = MPI_Bcast(buffer, count, (MPI_Datatype)datatype, id,
+						MPI_COMM_WORLD);
+	WC_HANDLE_MPI_ERROR(MPI_Bcast, rc);
+	return rc;
+}
+
 #else
 
 int wc_mpi_init(int *argc, char ***argv)
@@ -96,6 +104,11 @@ int wc_mpi_peer_count()
 }
 
 int wc_mpi_peer_id()
+{
+	return 0;
+}
+
+int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id)
 {
 	return 0;
 }

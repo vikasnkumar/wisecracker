@@ -31,6 +31,7 @@ struct wc_executor_details {
 	int peer_id;
 	uint8_t mpi_initialized;
 	wc_exec_callbacks_t cbs;
+	uint8_t callbacks_set;
 	wc_opencl_t ocl;
 	uint8_t ocl_initialized;
 	char *code;
@@ -66,6 +67,10 @@ wc_exec_t *wc_executor_init(int *argc, char ***argv)
 			break;
 		}
 		wc->ocl_initialized = 0;
+		wc->callbacks_set = 0;
+		wc->cbs.user = NULL;
+		wc->cbs.max_devices = 0;
+		wc->cbs.device_type = WC_DEVTYPE_ANY;
 	} while (0);
 	if (rc < 0) {
 		if (wc && wc->mpi_initialized) {
@@ -117,10 +122,20 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 			!cbs->get_kernel_name) {
 			WC_ERROR("Wisecracker needs the get_code, get_task_size and"
 					" get_kernel_name callbacks.\n");
+			wc->callbacks_set = 0;
 		} else {
+			int rc;
+			uint32_t data[2];
+			data[0] = (uint32_t)cbs->device_type;
+			data[1] = cbs->max_devices;
+			rc = wc_mpi_broadcast(data, 2, MPI_INT, 0);
+			if (rc < 0) {
+				WC_ERROR("Unable to share the device type and max devices\n");
+				return WC_EXE_ERR_MPI;
+			}
 			if (!wc->ocl_initialized) {
-				if (wc_opencl_init(cbs->device_type, cbs->max_devices,
-						&wc->ocl) < 0) {
+				wc_devtype_t dt = (wc_devtype_t)data[0];
+				if (wc_opencl_init(dt, data[1], &wc->ocl) < 0) {
 					WC_ERROR("Failed to create local runtime on system\n");
 					return WC_EXE_ERR_OPENCL;
 				}
@@ -128,6 +143,10 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 			wc->ocl_initialized = 1;
 			// copy the pointers into an internal structure
 			memcpy(&(wc->cbs), cbs, sizeof(*cbs));
+			// override the values with the received values
+			wc->cbs.device_type = (wc_devtype_t)data[0];
+			wc->cbs.max_devices = data[1];
+			wc->callbacks_set = 1;
 			return WC_EXE_OK;
 		}
 	}
@@ -139,6 +158,7 @@ enum {
 	WC_EXECSTATE_STARTED,
 	WC_EXECSTATE_GOT_CODE,
 	WC_EXECSTATE_GOT_BUILDOPTS,
+	WC_EXECSTATE_COMPILED_CODE,
 	WC_EXECSTATE_FINISHED
 };
 
@@ -193,6 +213,36 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 	return rc;
 }
 
+static const char *wc_devtype_to_string(const wc_devtype_t devt)
+{
+#undef DEV2STR
+#define DEV2STR(A) case A: return #A
+	switch (devt) {
+	DEV2STR(WC_DEVTYPE_CPU);
+	DEV2STR(WC_DEVTYPE_GPU);
+	DEV2STR(WC_DEVTYPE_ANY);
+	default: return "unknown";
+	}
+#undef DEV2STR
+}
+
 void wc_executor_dump(const wc_exec_t *wc)
 {
+	if (wc) {
+		if (wc->mpi_initialized) {
+			WC_INFO("MPI has been initialized successfully.\n");
+		}
+		WC_INFO("Total Peer Count: %d\n", wc->peer_count);
+		WC_INFO("My Peer Id: %d\n", wc->peer_id);
+		if (wc->ocl_initialized) {
+			WC_INFO("OpenCL has been initialized successfully.\n");
+			wc_opencl_dump(&(wc->ocl));
+		}
+		if (wc->callbacks_set) {
+			WC_INFO("Callbacks have been set.\n");
+			WC_INFO("Max Devices: %u\n", wc->cbs.max_devices);
+			WC_INFO("Device Type: %s\n",
+					wc_devtype_to_string(wc->cbs.device_type));
+		}
+	}
 }

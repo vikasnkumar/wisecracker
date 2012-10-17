@@ -352,34 +352,33 @@ int main(int argc, char **argv)
 	// create executor object. if MPI is used, parse out the MPI arguments
 	wc = wc_executor_init(&argc, &argv);
 	assert(wc != NULL);
-	// print information of the executor object on screen
-	wc_executor_dump(wc);
-	// if we are the main application, then we parse the arguments
-	if (wc_executor_peer_id(wc) == 0) {
-		// parse actual commandline arguments
-		memset(&user, 0, sizeof(user));
-		if (wc_user_parse(argc, argv, &user) < 0) {
-			WC_ERROR("Unable to parse arguments.\n");
-			return -1;
-		}
-	}
-	// set up the callbacks for distribution
-	memset(&callbacks, 0, sizeof(callbacks));
-	callbacks.user = &user;
-	callbacks.max_devices = user.max_devices;
-	callbacks.device_type = user.device_type;
-	callbacks.on_start = testmd5_on_start;
-	callbacks.on_finish = testmd5_on_finish;
-	callbacks.get_code = testmd5_get_code;
-	callbacks.get_task_size = testmd5_get_tasksize;
-	callbacks.get_kernel_name = testmd5_get_kernelname;
 	do {
+		// if we are the main application, then we parse the arguments
+		if (wc_executor_peer_id(wc) == 0) {
+			// parse actual commandline arguments
+			memset(&user, 0, sizeof(user));
+			if (wc_user_parse(argc, argv, &user) < 0) {
+				WC_ERROR("Unable to parse arguments.\n");
+				return -1;
+			}
+		}
+		// set up the callbacks for distribution
+		memset(&callbacks, 0, sizeof(callbacks));
+		callbacks.user = &user;
+		callbacks.max_devices = user.max_devices;
+		callbacks.device_type = user.device_type;
+		callbacks.on_start = testmd5_on_start;
+		callbacks.on_finish = testmd5_on_finish;
+		callbacks.get_code = testmd5_get_code;
+		callbacks.get_task_size = testmd5_get_tasksize;
+		callbacks.get_kernel_name = testmd5_get_kernelname;
 		err = wc_executor_setup(wc, &callbacks);
 		assert(err == WC_EXE_OK);
 		if (err != WC_EXE_OK) {
 			WC_ERROR("Error setting up callbacks: %d\n", err);
 			break;
 		}
+		// print information of the executor object on screen
 		wc_executor_dump(wc);
 		err = wc_executor_run(wc, 0);
 		if (err != WC_EXE_OK) {
