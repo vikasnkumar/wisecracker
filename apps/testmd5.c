@@ -464,7 +464,7 @@ int main(int argc, char **argv)
 	assert(wc != NULL);
 	do {
 		// if we are the main application, then we parse the arguments
-		if (wc_executor_peer_id(wc) == 0) {
+		if (wc_executor_system_id(wc) == 0) {
 			// parse actual commandline arguments
 			memset(&user, 0, sizeof(user));
 			if (wc_user_parse(argc, argv, &user) < 0) {

@@ -27,8 +27,8 @@
 #include "internal_opencl.h"
 
 struct wc_executor_details {
-	int peer_count;
-	int peer_id;
+	int num_systems;
+	int system_id;
 	uint8_t mpi_initialized;
 	wc_exec_callbacks_t cbs;
 	uint8_t callbacks_set;
@@ -59,13 +59,13 @@ wc_exec_t *wc_executor_init(int *argc, char ***argv)
 		if (rc != 0)
 			break;
 		wc->mpi_initialized = 1;
-		wc->peer_count = wc_mpi_peer_count();
-		if (wc->peer_count < 0) {
+		wc->num_systems = wc_mpi_peer_count();
+		if (wc->num_systems < 0) {
 			rc = -1;
 			break;
 		}
-		wc->peer_id = wc_mpi_peer_id();
-		if (wc->peer_id < 0) {
+		wc->system_id = wc_mpi_peer_id();
+		if (wc->system_id < 0) {
 			rc = -1;
 			break;
 		}
@@ -111,14 +111,14 @@ void wc_executor_destroy(wc_exec_t *wc)
 	}
 }
 
-int wc_executor_peer_count(const wc_exec_t *wc)
+int wc_executor_num_systems(const wc_exec_t *wc)
 {
-	return (wc) ? wc->peer_count : WC_EXE_ERR_INVALID_PARAMETER;
+	return (wc) ? wc->num_systems : WC_EXE_ERR_INVALID_PARAMETER;
 }
 
-int wc_executor_peer_id(const wc_exec_t *wc)
+int wc_executor_system_id(const wc_exec_t *wc)
 {
-	return (wc) ? wc->peer_id : WC_EXE_ERR_INVALID_PARAMETER;
+	return (wc) ? wc->system_id : WC_EXE_ERR_INVALID_PARAMETER;
 }
 
 wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
@@ -356,7 +356,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		rc = wc_executor_pre_run(wc, &current_state);
 		if (rc != WC_EXE_OK)
 			break;
-		if (wc->peer_id == 0) {
+		if (wc->system_id == 0) {
 			rc = wc_executor_master_run(wc, &current_state);
 		} else {
 			rc = wc_executor_slave_run(wc, &current_state);
@@ -427,8 +427,8 @@ void wc_executor_dump(const wc_exec_t *wc)
 		if (wc->mpi_initialized) {
 			WC_INFO("MPI has been initialized successfully.\n");
 		}
-		WC_INFO("Total Peer Count: %d\n", wc->peer_count);
-		WC_INFO("My Peer Id: %d\n", wc->peer_id);
+		WC_INFO("No, of Systems: %d\n", wc->num_systems);
+		WC_INFO("My System Id: %d\n", wc->system_id);
 		if (wc->ocl_initialized) {
 			WC_INFO("OpenCL has been initialized successfully.\n");
 			wc_opencl_dump(&(wc->ocl));

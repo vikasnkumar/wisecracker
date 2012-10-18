@@ -102,9 +102,9 @@ WCDLL wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs);
 WCDLL wc_err_t wc_executor_run(wc_exec_t *wc, long timeout);
 
 /* information providing functions */
-WCDLL int wc_executor_peer_count(const wc_exec_t *wc);
+WCDLL int wc_executor_num_systems(const wc_exec_t *wc);
 
-WCDLL int wc_executor_peer_id(const wc_exec_t *wc);
+WCDLL int wc_executor_system_id(const wc_exec_t *wc);
 
 WCDLL uint64_t wc_executor_num_tasks(const wc_exec_t *wc);
 
