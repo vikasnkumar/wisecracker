@@ -86,6 +86,13 @@ void wc_executor_destroy(wc_exec_t *wc)
 {
 	if (wc) {
 		int rc = 0;
+		if (wc->ocl_initialized) {
+			wc_opencl_finalize(&wc->ocl);
+			wc->ocl_initialized = 0;
+		}
+		WC_FREE(wc->code);
+		WC_FREE(wc->buildopts);
+		wc->codelen = 0;
 		if (wc->mpi_initialized) {
 			rc = wc_mpi_finalize();
 			if (rc != 0) {
@@ -93,12 +100,6 @@ void wc_executor_destroy(wc_exec_t *wc)
 			}
 			wc->mpi_initialized = 0;
 		}
-		if (wc->ocl_initialized) {
-			wc_opencl_finalize(&wc->ocl);
-			wc->ocl_initialized = 0;
-		}
-		WC_FREE(wc->code);
-		WC_FREE(wc->buildopts);
 		memset(wc, 0, sizeof(*wc));
 		WC_FREE(wc);
 	}
@@ -124,18 +125,38 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 					" get_kernel_name callbacks.\n");
 			wc->callbacks_set = 0;
 		} else {
-			int rc;
 			uint32_t data[2];
+			wc_devtype_t devtype;
+			uint32_t maxdevs = 0;
 			data[0] = (uint32_t)cbs->device_type;
 			data[1] = cbs->max_devices;
-			rc = wc_mpi_broadcast(data, 2, MPI_INT, 0);
-			if (rc < 0) {
-				WC_ERROR("Unable to share the device type and max devices\n");
-				return WC_EXE_ERR_MPI;
+			if (wc->mpi_initialized) {
+				int rc = wc_mpi_broadcast(data, 2, MPI_INT, 0);
+				if (rc < 0) {
+					WC_ERROR("Unable to share the device type and max devices."
+							" MPI Error: %d\n", rc);
+					return WC_EXE_ERR_MPI;
+				}
+			}
+			devtype = (wc_devtype_t)data[0];
+			maxdevs = data[1];
+			// ok we were initialized. let's check if the device-type is same
+			// and max-devices is same too
+			if (wc->ocl_initialized) {
+				if (wc->cbs.device_type == devtype &&
+					wc->cbs.max_devices == maxdevs) {
+					// do nothing
+				} else {
+					// finalize it to be reinitialized with a different set of
+					// devices and device types
+					wc_opencl_finalize(&wc->ocl);
+					wc->ocl_initialized = 0;
+					WC_DEBUG("Finalizing OpenCL to reinitialize again since"
+							" device count and type are changing\n");
+				}
 			}
 			if (!wc->ocl_initialized) {
-				wc_devtype_t dt = (wc_devtype_t)data[0];
-				if (wc_opencl_init(dt, data[1], &wc->ocl) < 0) {
+				if (wc_opencl_init(devtype, maxdevs, &wc->ocl) < 0) {
 					WC_ERROR("Failed to create local runtime on system\n");
 					return WC_EXE_ERR_OPENCL;
 				}
@@ -144,8 +165,8 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 			// copy the pointers into an internal structure
 			memcpy(&(wc->cbs), cbs, sizeof(*cbs));
 			// override the values with the received values
-			wc->cbs.device_type = (wc_devtype_t)data[0];
-			wc->cbs.max_devices = data[1];
+			wc->cbs.device_type = devtype;
+			wc->cbs.max_devices = maxdevs;
 			wc->callbacks_set = 1;
 			return WC_EXE_OK;
 		}
@@ -160,17 +181,24 @@ enum {
 	WC_EXECSTATE_GOT_CODE,
 	WC_EXECSTATE_GOT_BUILDOPTS,
 	WC_EXECSTATE_COMPILED_CODE,
+	WC_EXECSTATE_GOT_KERNELNAME,
+	WC_EXECSTATE_GOT_TASKSIZE,
 	WC_EXECSTATE_FINISHED
 };
 
-wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
+static wc_err_t wc_executor_pre_run(wc_exec_t *wc, int *stateptr)
 {
-	int current_state;
+	int current_state = WC_EXECSTATE_NOT_STARTED;
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
 		current_state = WC_EXECSTATE_NOT_STARTED;
+		if (!wc->callbacks_set) {
+			WC_ERROR("Callbacks not set for executor.\n");
+			rc = WC_EXE_ERR_MISSING_CALLBACK;
+			break;
+		}
 		if (!wc->ocl_initialized) {
 			if (wc_opencl_init(wc->cbs.device_type, wc->cbs.max_devices,
 						&wc->ocl) < 0) {
@@ -197,7 +225,8 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			break;
 		} else {
 			wc->codelen = 0;
-			wc->code = NULL;
+			// clear the code previously loaded
+			WC_FREE(wc->code);
 			wc->code = wc->cbs.get_code(wc, wc->cbs.user, &wc->codelen);
 			if (!wc->code || wc->codelen == 0) {
 				WC_ERROR("Error in get_code callback: %d\n", rc);
@@ -207,6 +236,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		current_state = WC_EXECSTATE_GOT_CODE;
 		// call the build_opts function to retrieve the build options
 		if (wc->cbs.get_build_options) {
+			WC_FREE(wc->buildopts); // clear the previous loaded options
 			wc->buildopts = wc->cbs.get_build_options(wc, wc->cbs.user);
 			if (!wc->buildopts) {
 				WC_WARN("Build options returned was NULL.\n");
@@ -226,17 +256,82 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			wc->cbs.on_code_compile(wc, wc->cbs.user, 1);
 		current_state = WC_EXECSTATE_COMPILED_CODE;
 	} while (0);
+	if (stateptr)
+		*stateptr = current_state;
+	return rc;
+}
+
+static wc_err_t wc_executor_post_run(wc_exec_t *wc, int *stateptr)
+{
+	wc_err_t rc = WC_EXE_OK;
+	if (!stateptr || !wc)
+		return WC_EXE_ERR_INVALID_PARAMETER;
 	// call the on_finish event
-	if (current_state != WC_EXECSTATE_NOT_STARTED && wc->cbs.on_finish) {
-		int frc = wc->cbs.on_finish(wc, wc->cbs.user);
-		if (frc != WC_EXE_OK) {
-			WC_ERROR("Error in on_finish callback: %d\n", frc);
+	if (*stateptr != WC_EXECSTATE_NOT_STARTED && wc->cbs.on_finish) {
+		rc = wc->cbs.on_finish(wc, wc->cbs.user);
+		if (rc != WC_EXE_OK) {
+			WC_ERROR("Error in on_finish callback: %d\n", rc);
 		}
-		current_state = WC_EXECSTATE_FINISHED;
-		// if rc had an earlier value keep that
-		if (rc == WC_EXE_OK && frc != WC_EXE_OK)
-			rc = frc;
+		*stateptr = WC_EXECSTATE_FINISHED;
 	}
+	return rc;
+}
+
+wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
+{
+	int current_state;
+	wc_err_t rc = WC_EXE_OK;
+	if (!wc)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	do {
+		uint64_t task_size = 0;
+		const char *kernelname = NULL;
+		current_state = WC_EXECSTATE_NOT_STARTED;
+		rc = wc_executor_pre_run(wc, &current_state);
+		if (rc != WC_EXE_OK)
+			break;
+		// get the kernel name
+		if (!wc->cbs.get_kernel_name) {
+			WC_ERROR("The get_kernel_name callback is missing\n");
+			rc = WC_EXE_ERR_MISSING_CALLBACK;
+			break;
+		} else {
+			kernelname = wc->cbs.get_kernel_name(wc, wc->cbs.user);
+			if (!kernelname) {
+				WC_ERROR("Kernel name cannot be NULL\n");
+				rc = WC_EXE_ERR_INVALID_VALUE;
+				break;
+			}
+			WC_DEBUG("Using kernel name: %s\n", kernelname);
+		}
+		current_state = WC_EXECSTATE_GOT_KERNELNAME;
+		// get task decomposition
+		// TODO: we can add another callback to retrieve a more detailed
+		// decomposition, but not yet
+		if (!wc->cbs.get_task_size) {
+			WC_ERROR("The get_task_size callback is missing\n");
+			rc = WC_EXE_ERR_MISSING_CALLBACK;
+			break;
+		} else {
+			task_size = wc->cbs.get_task_size(wc, wc->cbs.user);
+			if (task_size == 0) {
+				WC_ERROR("Task size cannot be 0.\n");
+				rc = WC_EXE_ERR_INVALID_VALUE;
+				break;
+			}
+			WC_DEBUG("Task Size: %lu\n", task_size);
+		}
+		current_state = WC_EXECSTATE_GOT_TASKSIZE;
+		// XXX: Steps for invocation
+		// collect total number of tasks on the master, send to slaves later
+		// collect per task data on the master, send to slaves later
+		// collect global data on the master, send to slaves later
+		// process kernels on each system
+		// retrieve data for each kernel output
+		// send to master for aggregation
+	} while (0);
+	// if rc had an earlier value keep that
+	rc |= wc_executor_post_run(wc, &current_state);
 	return rc;
 }
 
