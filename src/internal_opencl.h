@@ -27,16 +27,30 @@
 EXTERN_C_BEGIN
 
 typedef struct {
+	cl_platform_id id;
+	char *name;
+	char *extension;
+	char *version;
+	char *profile;
+	char *vendor;
+	cl_uint *dev_indices; /* reverse index into the device array */
+	cl_uint used_devices; /* number of devices used */
+	cl_uint max_devices; /* max number of devices for this platform */
+	cl_context context; /* a context is per platform */
+	cl_program program; /* a program is per context */
+} wc_clplatform_t;
+
+typedef struct {
 	/*  an array of platforms */
-	wc_platform_t *platforms;
+	wc_clplatform_t *platforms;
 	cl_uint platform_max;
 	/* an array of devices */
-	wc_device_t *devices;
+	wc_cldev_t *devices;
 	cl_uint device_max;
 } wc_opencl_t;
 
 int wc_opencl_init(wc_devtype_t devt, uint32_t max_devices,
-							wc_opencl_t *rt);
+					wc_opencl_t *rt, uint8_t allow_outoforder);
 
 void wc_opencl_finalize(wc_opencl_t *rt);
 

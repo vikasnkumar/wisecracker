@@ -49,21 +49,46 @@ typedef enum {
 } wc_devtype_t;
 
 typedef struct {
+	void *ptr;
+	size_t len;
+} wc_data_t;
+
+typedef struct {
+	cl_device_id id;
+	cl_device_type type;
+	cl_uint address_bits;
+	cl_uint compute_units;
+	size_t workgroup_sz;
+	cl_uint workitem_dim;
+	size_t *workitem_sz;
+	cl_ulong allocmem_sz;
+	cl_ulong globalmem_sz;
+	cl_ulong constmem_sz;
+	cl_ulong localmem_sz;
+	cl_command_queue cmdq; /* a command queue is per device */
+	cl_context context; /* multiple devices can have same context */
+	cl_program program; /* multiple devices can have same program */
+} wc_cldev_t;
+
+typedef struct {
 	void *user;
 	uint32_t max_devices;
 	wc_devtype_t device_type;
 	wc_err_t (*on_start)(const wc_exec_t *wc, void *user);
 	wc_err_t (*on_finish)(const wc_exec_t *wc, void *user);
-
 	char *(*get_code)(const wc_exec_t *wc, void *user, size_t *codelen);
 	char *(*get_build_options)(const wc_exec_t *wc, void *user);
-	const char *(*get_kernel_name)(const wc_exec_t *wc, void *user);
-	uint64_t (*get_task_size)(const wc_exec_t *wc, void *user);
 	void (*on_code_compile)(const wc_exec_t *wc, void *user, uint8_t success);
 
-	wc_err_t (*on_kernel_init)(const wc_exec_t *wc, wc_device_t *dev, void *user);
-	wc_err_t (*on_kernel_finish)(const wc_exec_t *wc, wc_device_t *dev, void *user);
-	wc_err_t(*on_kernel_call)(const wc_exec_t *wc, wc_device_t *dev, void *user);
+	uint64_t (*get_num_tasks)(const wc_exec_t *wc, void *user);
+	wc_err_t (*get_global_data)(const wc_exec_t *wc, void *user,
+			wc_data_t *out);
+
+	wc_err_t (*on_device_start)(const wc_exec_t *wc, wc_cldev_t *dev,
+								uint32_t devindex, void *user);
+	wc_err_t (*on_device_finish)(const wc_exec_t *wc, wc_cldev_t *dev,
+								uint32_t devindex, void *user);
+	wc_err_t(*on_kernel_call)(const wc_exec_t *wc, wc_cldev_t *dev, void *user);
 
 	void (*progress)(float percent, void *user);
 } wc_exec_callbacks_t;
@@ -74,13 +99,21 @@ WCDLL void wc_executor_destroy(wc_exec_t *wc);
 
 WCDLL wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs);
 
+WCDLL wc_err_t wc_executor_run(wc_exec_t *wc, long timeout);
+
+/* information providing functions */
 WCDLL int wc_executor_peer_count(const wc_exec_t *wc);
 
 WCDLL int wc_executor_peer_id(const wc_exec_t *wc);
 
-WCDLL wc_err_t wc_executor_run(wc_exec_t *wc, long timeout);
+WCDLL uint64_t wc_executor_num_tasks(const wc_exec_t *wc);
+
+/* number of devices in current system */
+WCDLL uint32_t wc_executor_num_devices(const wc_exec_t *wc);
 
 WCDLL void wc_executor_dump(const wc_exec_t *wc);
+
+
 
 EXTERN_C_END
 

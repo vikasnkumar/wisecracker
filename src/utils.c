@@ -157,7 +157,8 @@ char *wc_util_strdup(const char *str)
 		if (!out) {
 			WC_ERROR_OUTOFMEMORY(len + 1);
 		} else {
-			memcpy(out, str, len + 1);
+			memcpy(out, str, len);
+			out[len] = 0x0;
 		}
 	}
 	return out;
