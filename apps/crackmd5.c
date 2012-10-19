@@ -59,6 +59,9 @@ struct wc_user {
 	struct timeval tv2;
 	double prev_progress;
 	double ttinterval;
+	// store the result in this
+	uint8_t found;
+	cl_uchar16 match;
 };
 
 struct wc_global_data {
@@ -542,6 +545,8 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		for (l = 0; l < wcd->nchars; ++l)
 			WC_NULL("%c", wcd->match.s[l]);
 		WC_NULL("\n");
+		wcu->found = 1;
+		memcpy(&wcu->match, &wcd->match, sizeof(wcd->match));
 		return WC_EXE_ERR_ABORT;
 	}
 	return WC_EXE_OK;
@@ -631,6 +636,15 @@ int main(int argc, char **argv)
 			WC_ERROR("Unable to crack MD5 sum. Error: %d\n", err);
 			break;
 		} else {
+			if (!user.found) {
+				WC_INFO("Unable to find a match\n");
+			} else {
+				uint8_t l;
+				WC_INFO("Found match: ");
+				for (l = 0; l < user.nchars; ++l)
+					WC_NULL("%c", user.match.s[l]);
+				WC_NULL("\n");
+			}
 			wc_util_timeofday(&tv2);
 			WC_INFO("Time taken for cracking: %lf seconds\n",
 					WC_TIME_TAKEN(tv1, tv2));
