@@ -544,7 +544,8 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 				rc |= clReleaseEvent(wc->userevent);
 				wc->userevent = (cl_event)0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-					rc |= clReleaseEvent(events[idx]);
+					if (events[idx])
+						rc |= clReleaseEvent(events[idx]);
 					events[idx] = (cl_event)0;
 				}
 				if (wc->cbs.on_device_range_done) {

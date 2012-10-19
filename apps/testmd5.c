@@ -49,7 +49,7 @@ struct wc_user {
 	char *cl_filename;
 	uint32_t max_devices;
 	wc_devtype_t device_type;
-	uint64_t workitems;
+	uint32_t workitems;
 	/* required for the task usage */
 	struct wc_per_device {
 		cl_kernel kernel;
@@ -109,7 +109,7 @@ int wc_user_parse(int argc, char **argv, struct wc_user *user)
 			user->device_type = WC_DEVTYPE_GPU;
 			break;
 		case 'w':
-			user->workitems = (uint64_t)strtol(optarg, NULL, 10);
+			user->workitems = (uint32_t)strtol(optarg, NULL, 10);
 			break;
 		case 'h':
 		default:
@@ -135,7 +135,7 @@ void wc_user_dump(const struct wc_user *user)
 			WC_INFO("CPU only\n");
 		if (user->device_type == WC_DEVTYPE_GPU)
 			WC_INFO("GPU only\n");
-		WC_INFO("Max Parallel Items: %lu\n", user->workitems);
+		WC_INFO("Max Parallel Items: %u\n", user->workitems);
 	}
 }
 
@@ -274,7 +274,7 @@ char *testmd5_get_code(const wc_exec_t *wc, void *user, size_t *codelen)
 uint64_t testmd5_get_num_tasks(const wc_exec_t *wc, void *user)
 {
 	struct wc_user *wcu = (struct wc_user *)user;
-	return (wcu) ? wcu->workitems : 0;
+	return (wcu) ? (uint64_t)wcu->workitems : 0;
 }
 
 wc_err_t testmd5_get_global_data(const wc_exec_t *wc, void *user,
@@ -288,7 +288,7 @@ wc_err_t testmd5_get_global_data(const wc_exec_t *wc, void *user,
 	if (!wcu || !out)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	// initialize the variables
-	ilen = maxblocksz * (cl_uint)wcu->workitems;
+	ilen = maxblocksz * wcu->workitems;
 	input = WC_MALLOC(ilen);
 	if (!input)
 		return WC_EXE_ERR_OUTOFMEMORY;
@@ -388,21 +388,35 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 				&global_work_offset, &global_work_size, &local_work_size, 0,
 				NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
-		// here we force the wait and check results.
-		rc = clEnqueueReadBuffer(dev->cmdq, wcd->digest_mem, CL_TRUE, 0,
-				sizeof(cl_uchar16) * wcu->workitems, wcu->digest, 0, NULL, NULL);
+		rc = clEnqueueReadBuffer(dev->cmdq, wcd->digest_mem, CL_FALSE, 0,
+				sizeof(cl_uchar16) * wcu->workitems, wcu->digest, 0, NULL,
+				outevent);
 		WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
-		if (rc == CL_SUCCESS) {
-			uint32_t jdx;
-			cl_uchar *input = (cl_uchar *)gdata->ptr;
-			const int maxblocksz = MAX_BLOCK_LEN;
-			for (jdx = 0; jdx < wcu->workitems; ++jdx) {
-				cl_uchar md[MD5_DIGEST_LENGTH];
-				memset(md, 0, sizeof(md));
-				MD5(&input[jdx * maxblocksz], wcu->input_len[jdx], md);
-				if (wc_md5_compare(md, &wcu->digest[jdx])) {
-					break;
-				}
+	} while (0);
+	return (rc != CL_SUCCESS) ? WC_EXE_ERR_OPENCL : WC_EXE_OK;
+}
+
+wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
+								uint32_t devindex, void *user,
+								wc_data_t *gdata,
+								uint64_t start, uint64_t end)
+{
+	cl_int rc = CL_SUCCESS;
+	struct wc_user *wcu = (struct wc_user *)user;
+	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	if (!wcu->devices || devindex >= wcu->num_devices || !wcu->input_len)
+		return WC_EXE_ERR_BAD_STATE;
+	do {
+		uint32_t jdx;
+		cl_uchar *input = (cl_uchar *)gdata->ptr;
+		const int maxblocksz = MAX_BLOCK_LEN;
+		for (jdx = 0; jdx < wcu->workitems; ++jdx) {
+			cl_uchar md[MD5_DIGEST_LENGTH];
+			memset(md, 0, sizeof(md));
+			MD5(&input[jdx * maxblocksz], wcu->input_len[jdx], md);
+			if (wc_md5_compare(md, &wcu->digest[jdx])) {
+				break;
 			}
 		}
 	} while (0);
@@ -475,6 +489,7 @@ int main(int argc, char **argv)
 		callbacks.on_device_start = testmd5_on_device_start;
 		callbacks.on_device_finish = testmd5_on_device_finish;
 		callbacks.on_device_range_exec = testmd5_on_device_range_exec;
+		callbacks.on_device_range_done = testmd5_on_device_range_done;
 		callbacks.progress = testmd5_progress;
 		err = wc_executor_setup(wc, &callbacks);
 		assert(err == WC_EXE_OK);
