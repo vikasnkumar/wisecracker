@@ -36,6 +36,7 @@ EXTERN_C_BEGIN
 #define WC_EXE_ERR_INVALID_PARAMETER -6
 #define WC_EXE_ERR_MISSING_CALLBACK -7
 #define WC_EXE_ERR_INVALID_VALUE -8
+#define WC_EXE_ERR_ABORT -9
 #define WC_EXE_ERR_UNKNOWN INT_MIN
 
 typedef int wc_err_t;
@@ -89,10 +90,13 @@ typedef struct {
 								uint32_t devindex, void *user, wc_data_t *gdata);
 	wc_err_t (*on_device_finish)(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user, wc_data_t *gdata);
-	wc_err_t (*on_device_run)(const wc_exec_t *wc, wc_cldev_t *dev,
-							uint32_t devindex, void *user,
+	wc_err_t (*on_device_range_exec)(const wc_exec_t *wc, wc_cldev_t *dev,
+							uint32_t devindex, void *user, wc_data_t *gdata,
 							uint64_t start, uint64_t end,
-							cl_event *event, wc_data_t *gdata);
+							cl_event *out_event);
+	wc_err_t (*on_device_range_done)(const wc_exec_t *wc, wc_cldev_t *dev,
+							uint32_t devindex, void *user, wc_data_t *gdata,
+							uint64_t start, uint64_t end);
 	void (*free_global_data)(const wc_exec_t *wc, void *user,
 			wc_data_t *gdata);
 	void (*progress)(float percent, void *user);

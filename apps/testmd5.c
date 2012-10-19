@@ -180,7 +180,7 @@ wc_err_t testmd5_on_start(const wc_exec_t *wc, void *user)
 	struct wc_user *wcu = (struct wc_user *)user;
 	if (wcu) {
 		const size_t wcpdsz = sizeof(struct wc_per_device);
-		WC_DEBUG("In on_start callback.\n");
+		WC_DEBUG("In on_start callback, allocating stuff\n");
 		// just print something for now
 		wc_user_dump(wcu);
 		wcu->num_devices = wc_executor_num_devices(wc);
@@ -323,6 +323,7 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 		cl_ulong localmem_per_kernel = 0;
 		cl_uint parallelsz = (cl_uint)wc_executor_num_tasks(wc);
 		struct wc_per_device *wcd = &wcu->devices[devindex];
+
 		ilen = maxblocksz * parallelsz;
 		memset(wcd, 0, sizeof(*wcd));
 		wcd->parallelsz = parallelsz;
@@ -358,10 +359,11 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 	return (rc != CL_SUCCESS) ? WC_EXE_ERR_OPENCL : WC_EXE_OK;
 }
 
-wc_err_t testmd5_on_device_run(const wc_exec_t *wc, wc_cldev_t *dev,
+wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user,
+								wc_data_t *gdata,
 								uint64_t start, uint64_t end,
-								cl_event *event, wc_data_t *gdata)
+								cl_event *outevent)
 {
 	cl_int rc = CL_SUCCESS;
 	struct wc_user *wcu = (struct wc_user *)user;
@@ -471,7 +473,7 @@ int main(int argc, char **argv)
 		callbacks.get_global_data = testmd5_get_global_data;
 		callbacks.on_device_start = testmd5_on_device_start;
 		callbacks.on_device_finish = testmd5_on_device_finish;
-		callbacks.on_device_run = testmd5_on_device_run;
+		callbacks.on_device_range_exec = testmd5_on_device_range_exec;
 		callbacks.progress = testmd5_progress;
 		err = wc_executor_setup(wc, &callbacks);
 		assert(err == WC_EXE_OK);

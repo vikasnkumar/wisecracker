@@ -37,6 +37,13 @@ target_link_libraries(wisecrackmd5 wisecracker_s)
 set_target_properties(wisecrackmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
 install(TARGETS wisecrackmd5 RUNTIME DESTINATION bin)
 
+add_executable(crackmd5 crackmd5.c)
+add_dependencies(crackmd5 md5_cl.h)
+target_link_libraries(crackmd5 wisecracker_s)
+# this is needed since we link with static
+set_target_properties(crackmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
+install(TARGETS crackmd5 RUNTIME DESTINATION bin)
+
 if (USE_OPENSSL)
 	add_executable(wctestmd5 md5test.c)
 	add_dependencies(wctestmd5 md5_cl.h)

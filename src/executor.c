@@ -61,6 +61,8 @@ struct wc_executor_details {
 	int state;
 	// we track each system's total possibilities
 	uint64_t *tasks_per_system;
+	int64_t refcount;
+	cl_event userevent;
 };
 
 wc_exec_t *wc_executor_init(int *argc, char ***argv)
@@ -150,9 +152,9 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 	if (wc && cbs) {
 		// verify if the required callbacks are present
 		if (!cbs->get_code || !cbs->get_num_tasks ||
-			!cbs->on_device_run) {
+			!cbs->on_device_range_exec) {
 			WC_ERROR("Wisecracker needs the get_code, get_num_tasks and"
-					" on_device_run callbacks.\n");
+					" on_device_range_exec callbacks.\n");
 			wc->callbacks_set = 0;
 		} else {
 			uint32_t data[2];
@@ -392,6 +394,24 @@ static wc_err_t wc_executor_slave_run(wc_exec_t *wc)
 	return WC_EXE_OK;
 }
 
+void CL_CALLBACK wc_executor_device_event_notify(cl_event ev, cl_int status, void *user)
+{
+	cl_int rc = CL_SUCCESS;
+	wc_exec_t *wc = (wc_exec_t *)user;
+	if (!wc || !wc->userevent)
+		return;
+	// reduce the reference count until it hits 1
+	wc->refcount--;
+	// WC_DEBUG("wrefcount=%ld \n", wc->refcount);
+	// the reference count has hit 0
+	if (wc->refcount == 0) {
+		// WC_DEBUG("setting the user event\n");
+		rc = clSetUserEventStatus(wc->userevent, CL_COMPLETE);
+		if (rc != CL_SUCCESS)
+			WC_ERROR_OPENCL(clSetUserEventStatus, rc);
+	}
+}
+
 wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 {
 	wc_err_t rc = WC_EXE_OK;
@@ -399,6 +419,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
 		cl_event *events = NULL;
+		cl_ulong2 *device_ranges = NULL;
 		wc->state = WC_EXECSTATE_NOT_STARTED;
 		rc = wc_executor_pre_run(wc);
 		if (rc != WC_EXE_OK)
@@ -438,6 +459,13 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			break;
 		}
 		memset(events, 0, sizeof(cl_event) * wc->ocl.device_max);
+		device_ranges = WC_MALLOC(sizeof(cl_ulong2) * wc->ocl.device_max);
+		if (!device_ranges) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_ulong2) * wc->ocl.device_max);
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(device_ranges, 0, sizeof(cl_ulong2) * wc->ocl.device_max);
 		// TODO: we need to do the main stuff here for the current system
 		do {
 			uint64_t tasks_per_system;
@@ -445,28 +473,62 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			int sid = wc->system_id;
 			uint64_t tasks_completed = 0;
 			uint32_t idx;
+
 			tasks_per_system = wc->tasks_per_system[sid] *
 								wc->task_range_multiplier;
 			tasks_completed = 0;
 			start = tasks_completed;
 			do {
 				rc = WC_EXE_OK;
+				wc->refcount = 0;
+				wc->userevent = (cl_event)0;
+				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+					if (wc->ocl.devices[idx].context) {
+						wc->userevent =
+							clCreateUserEvent(wc->ocl.devices[idx].context,
+									&rc);
+						if (rc != CL_SUCCESS) {
+							WC_ERROR_OPENCL(clRetainEvent, rc);
+							// try again
+						} else {
+							break;
+						}
+					}
+				}
+				if (!wc->userevent) {
+					rc = WC_EXE_ERR_OPENCL;
+					WC_WARN("User event failed to set. Shaky state\n");
+					break;
+				}
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
 					events[idx] = (cl_event)0;
 					end = start + tasks_per_system;
 					if (end >= wc->num_tasks)
 						end = wc->num_tasks;
-					rc = wc->cbs.on_device_run(wc, dev, idx, wc->cbs.user,
-							start, end, &events[idx], &wc->globaldata);
-
+					device_ranges[idx].s[0] = start;
+					device_ranges[idx].s[1] = end;
+					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
+							wc->cbs.user, &wc->globaldata, start, end,
+							&events[idx]);
 					if (rc != WC_EXE_OK) {
 						WC_ERROR("Error occurred while running device work:"
 								" Range(%lu,%lu). Completed(%lu)\n",
 								start, end, tasks_completed);
 						break;
 					}
-					//TODO: Wait for events here
+					wc->refcount++;
+					//Wait for events here
+					if (events[idx]) {
+						rc = clSetEventCallback(events[idx], CL_COMPLETE,
+								wc_executor_device_event_notify, wc);
+						WC_ERROR_OPENCL_BREAK(clSetEventCallback, rc);
+						rc = clEnqueueWaitForEvents(dev->cmdq, 1, &events[idx]);
+						WC_ERROR_OPENCL_BREAK(clEnqueueWaitForEvents, rc);
+					}
+					// flush the command queue for the device
+					rc = clFlush(dev->cmdq);
+					WC_ERROR_OPENCL_BREAK(clFlush, rc);
 					tasks_completed += end - start;
 					start = end;
 					if (start >= wc->num_tasks)
@@ -474,26 +536,52 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 					if (tasks_completed >= wc->num_tasks)
 						break;
 				}
-				if (rc != WC_EXE_OK)
+				if (rc != WC_EXE_OK || rc < 0)
 					break;
-				if (wc->cbs.progress) {
-					double percent = ((double)(100.0 * tasks_completed)) / wc->num_tasks;
-					wc->cbs.progress((float)percent, wc->cbs.user);
-				}
-			} while (tasks_completed < wc->num_tasks);
-			// FIXME: move to OpencL file
-			for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-				if (events[idx]) {
-					int err = clReleaseEvent(events[idx]);
-					if (err != CL_SUCCESS)
-						WC_ERROR_OPENCL(clReleaseEvent, err);
+				rc = clWaitForEvents(1, &wc->userevent);
+				WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
+				// gets here when event is set
+				rc |= clReleaseEvent(wc->userevent);
+				wc->userevent = (cl_event)0;
+				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+					rc |= clReleaseEvent(events[idx]);
 					events[idx] = (cl_event)0;
 				}
-			}
+				if (wc->cbs.on_device_range_done) {
+					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+						wc_err_t err = wc->cbs.on_device_range_done(wc, dev,
+								idx, wc->cbs.user, &wc->globaldata,
+								device_ranges[idx].s[0],
+								device_ranges[idx].s[1]);
+						//TODO: send data back to master
+						if (err == WC_EXE_ERR_ABORT) {
+							WC_INFO("User requested abort.\n");
+							rc = err;
+							break;
+						}
+						if (err != WC_EXE_OK) {
+							WC_ERROR("Error occurred in callback\n");
+							rc = WC_EXE_ERR_BAD_STATE;
+							break;
+						}
+					}
+				}
+				if (wc->cbs.progress) {
+					double percent = ((double)(100.0 * tasks_completed)) /
+															wc->num_tasks;
+					wc->cbs.progress((float)percent, wc->cbs.user);
+				}
+				if (rc != WC_EXE_OK)
+					break;
+			} while (tasks_completed < wc->num_tasks);
+			if (rc != WC_EXE_OK)
+				break;
 		} while (0);
 		wc->state = WC_EXECSTATE_DEVICE_DONE_RUNNING;
 		WC_FREE(events);
-		if (rc != WC_EXE_OK)
+		WC_FREE(device_ranges);
+		if (rc != WC_EXE_OK && rc != WC_EXE_ERR_ABORT)
 			break;
 		// let's invoke the device finish functions
 		if (wc->cbs.on_device_finish) {
@@ -511,13 +599,6 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 				break;
 		}
 		wc->state = WC_EXECSTATE_DEVICE_FINISHED;
-		// XXX: Steps for invocation
-		// collect total number of tasks on the master, send to slaves later
-		// collect per task data on the master, send to slaves later
-		// collect global data on the master, send to slaves later
-		// process kernels on each system
-		// retrieve data for each kernel output
-		// send to master for aggregation
 	} while (0);
 	// if rc had an earlier value keep that
 	rc |= wc_executor_post_run(wc);
