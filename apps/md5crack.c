@@ -375,7 +375,7 @@ int wc_md5_checker(wc_runtime_t *wc, const char *md5sum, const char *prefix,
 					sizeof(cl_uchar16), NULL, &rc);
 			WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 			// max tries allowed based on local memory availability
-			clGetKernelWorkGroupInfo(kcall[idx].kernel, dev->id,
+			rc = clGetKernelWorkGroupInfo(kcall[idx].kernel, dev->id,
 					CL_KERNEL_LOCAL_MEM_SIZE, sizeof(cl_ulong),
 					&localmem_per_kernel, NULL);
 			WC_ERROR_OPENCL_BREAK(clGetKernelWorkGroupInfo, rc);

@@ -33,7 +33,7 @@
 #endif
 
 #ifndef MAX_WORKITEMS
-	#define MAX_WORKITEMS 16
+	#define MAX_WORKITEMS 128
 #endif
 #ifndef MAX_BLOCK_LEN
 	#define MAX_BLOCK_LEN 512
@@ -320,6 +320,7 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 		const cl_uint maxblocksz = MAX_BLOCK_LEN;
 		cl_uint ilen;
 		cl_uint argc = 0;
+		cl_ulong localmem_per_kernel = 0;
 		cl_uint parallelsz = (cl_uint)wc_executor_num_tasks(wc);
 		struct wc_per_device *wcd = &wcu->devices[devindex];
 		ilen = maxblocksz * parallelsz;
@@ -337,6 +338,14 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 		wcd->digest_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
 									sizeof(cl_uchar16) * parallelsz, NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
+
+		rc = clGetKernelWorkGroupInfo(wcd->kernel, dev->id,
+				CL_KERNEL_LOCAL_MEM_SIZE, sizeof(cl_ulong),
+				&localmem_per_kernel, NULL);
+		WC_ERROR_OPENCL_BREAK(clGetKernelWorkGroupInfo, rc);
+		WC_DEBUG("Local mem per kernel: %lu for device %u\n",
+				localmem_per_kernel, devindex);
+		wcd->l_bufsz = (cl_uint)localmem_per_kernel + 2 * maxblocksz;
 		argc = 0;
 		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_mem), &wcd->input_mem);
 		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_mem), &wcd->inputlen_mem);
