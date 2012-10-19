@@ -83,13 +83,18 @@ typedef struct {
 	uint64_t (*get_num_tasks)(const wc_exec_t *wc, void *user);
 	wc_err_t (*get_global_data)(const wc_exec_t *wc, void *user,
 			wc_data_t *out);
+	uint32_t (*get_task_range_multiplier)(const wc_exec_t *wc, void *user);
 
 	wc_err_t (*on_device_start)(const wc_exec_t *wc, wc_cldev_t *dev,
-								uint32_t devindex, void *user);
+								uint32_t devindex, void *user, wc_data_t *gdata);
 	wc_err_t (*on_device_finish)(const wc_exec_t *wc, wc_cldev_t *dev,
-								uint32_t devindex, void *user);
-	wc_err_t(*on_kernel_call)(const wc_exec_t *wc, wc_cldev_t *dev, void *user);
-
+								uint32_t devindex, void *user, wc_data_t *gdata);
+	wc_err_t (*on_device_run)(const wc_exec_t *wc, wc_cldev_t *dev,
+							uint32_t devindex, void *user,
+							uint64_t start, uint64_t end,
+							cl_event *event, wc_data_t *gdata);
+	void (*free_global_data)(const wc_exec_t *wc, void *user,
+			wc_data_t *gdata);
 	void (*progress)(float percent, void *user);
 } wc_exec_callbacks_t;
 

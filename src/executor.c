@@ -26,6 +26,24 @@
 #include "internal_mpi.h"
 #include "internal_opencl.h"
 
+enum {
+	WC_EXECSTATE_NOT_STARTED = 0,
+	WC_EXECSTATE_OPENCL_INITED,
+	WC_EXECSTATE_STARTED,
+	WC_EXECSTATE_GOT_CODE,
+	WC_EXECSTATE_GOT_BUILDOPTS,
+	WC_EXECSTATE_COMPILED_CODE,
+	WC_EXECSTATE_GOT_NUMTASKS,
+	WC_EXECSTATE_GOT_TASKRANGEMULTIPLIER,
+	WC_EXECSTATE_GOT_TASKSPERSYSTEM,
+	WC_EXECSTATE_GOT_GLOBALDATA,
+	WC_EXECSTATE_DEVICE_STARTED,
+	WC_EXECSTATE_DEVICE_DONE_RUNNING,
+	WC_EXECSTATE_DEVICE_FINISHED,
+	WC_EXECSTATE_FREED_GLOBALDATA,
+	WC_EXECSTATE_FINISHED
+};
+
 struct wc_executor_details {
 	int num_systems;
 	int system_id;
@@ -38,7 +56,11 @@ struct wc_executor_details {
 	size_t codelen;
 	char *buildopts;
 	uint64_t num_tasks;
-	wc_data_t global;
+	uint32_t task_range_multiplier;
+	wc_data_t globaldata;
+	int state;
+	// we track each system's total possibilities
+	uint64_t *tasks_per_system;
 };
 
 wc_exec_t *wc_executor_init(int *argc, char ***argv)
@@ -74,6 +96,7 @@ wc_exec_t *wc_executor_init(int *argc, char ***argv)
 		wc->cbs.user = NULL;
 		wc->cbs.max_devices = 0;
 		wc->cbs.device_type = WC_DEVTYPE_ANY;
+		wc->state = WC_EXECSTATE_NOT_STARTED;
 	} while (0);
 	if (rc < 0) {
 		if (wc && wc->mpi_initialized) {
@@ -93,8 +116,9 @@ void wc_executor_destroy(wc_exec_t *wc)
 			wc_opencl_finalize(&wc->ocl);
 			wc->ocl_initialized = 0;
 		}
-		WC_FREE(wc->global.ptr);
-		wc->global.len = 0;
+		WC_FREE(wc->tasks_per_system);
+		WC_FREE(wc->globaldata.ptr);
+		wc->globaldata.len = 0;
 		WC_FREE(wc->code);
 		WC_FREE(wc->buildopts);
 		wc->codelen = 0;
@@ -125,9 +149,10 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 {
 	if (wc && cbs) {
 		// verify if the required callbacks are present
-		if (!cbs->get_code || !cbs->get_num_tasks) {
+		if (!cbs->get_code || !cbs->get_num_tasks ||
+			!cbs->on_device_run) {
 			WC_ERROR("Wisecracker needs the get_code, get_num_tasks and"
-					" other callbacks.\n");
+					" on_device_run callbacks.\n");
 			wc->callbacks_set = 0;
 		} else {
 			uint32_t data[2];
@@ -179,26 +204,13 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 	return WC_EXE_ERR_INVALID_PARAMETER;
 }
 
-enum {
-	WC_EXECSTATE_NOT_STARTED = 0,
-	WC_EXECSTATE_OPENCL_INITED,
-	WC_EXECSTATE_STARTED,
-	WC_EXECSTATE_GOT_CODE,
-	WC_EXECSTATE_GOT_BUILDOPTS,
-	WC_EXECSTATE_COMPILED_CODE,
-	WC_EXECSTATE_GOT_NUMTASKS,
-	WC_EXECSTATE_GOT_GLOBALDATA,
-	WC_EXECSTATE_FINISHED
-};
-
-static wc_err_t wc_executor_pre_run(wc_exec_t *wc, int *stateptr)
+static wc_err_t wc_executor_pre_run(wc_exec_t *wc)
 {
-	int current_state = WC_EXECSTATE_NOT_STARTED;
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
-		current_state = WC_EXECSTATE_NOT_STARTED;
+		wc->state = WC_EXECSTATE_NOT_STARTED;
 		if (!wc->callbacks_set) {
 			WC_ERROR("Callbacks not set for executor.\n");
 			rc = WC_EXE_ERR_MISSING_CALLBACK;
@@ -213,7 +225,7 @@ static wc_err_t wc_executor_pre_run(wc_exec_t *wc, int *stateptr)
 			}
 			wc->ocl_initialized = 1;
 		}
-		current_state = WC_EXECSTATE_OPENCL_INITED;
+		wc->state = WC_EXECSTATE_OPENCL_INITED;
 		if (!wc_opencl_is_usable(&wc->ocl)) {
 			WC_ERROR("OpenCL internal runtime is not usable\n");
 			rc = WC_EXE_ERR_BAD_STATE;
@@ -227,7 +239,7 @@ static wc_err_t wc_executor_pre_run(wc_exec_t *wc, int *stateptr)
 				break;
 			}
 		}
-		current_state = WC_EXECSTATE_STARTED;
+		wc->state = WC_EXECSTATE_STARTED;
 		// call the get_code function to retrieve the code
 		if (!wc->cbs.get_code) {
 			WC_ERROR("The get_code callback is missing\n");
@@ -243,7 +255,7 @@ static wc_err_t wc_executor_pre_run(wc_exec_t *wc, int *stateptr)
 				break;	
 			}
 		}
-		current_state = WC_EXECSTATE_GOT_CODE;
+		wc->state = WC_EXECSTATE_GOT_CODE;
 		// call the build_opts function to retrieve the build options
 		if (wc->cbs.get_build_options) {
 			WC_FREE(wc->buildopts); // clear the previous loaded options
@@ -252,7 +264,7 @@ static wc_err_t wc_executor_pre_run(wc_exec_t *wc, int *stateptr)
 				WC_WARN("Build options returned was NULL.\n");
 			}
 		}
-		current_state = WC_EXECSTATE_GOT_BUILDOPTS;
+		wc->state = WC_EXECSTATE_GOT_BUILDOPTS;
 		// ok compile the code now
 		if (wc_opencl_program_load(&wc->ocl, wc->code, wc->codelen,
 									wc->buildopts) < 0) {
@@ -264,36 +276,53 @@ static wc_err_t wc_executor_pre_run(wc_exec_t *wc, int *stateptr)
 		}
 		if (wc->cbs.on_code_compile)
 			wc->cbs.on_code_compile(wc, wc->cbs.user, 1);
-		current_state = WC_EXECSTATE_COMPILED_CODE;
+		wc->state = WC_EXECSTATE_COMPILED_CODE;
 	} while (0);
-	if (stateptr)
-		*stateptr = current_state;
 	return rc;
 }
 
-static wc_err_t wc_executor_post_run(wc_exec_t *wc, int *stateptr)
+static wc_err_t wc_executor_post_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
-	if (!stateptr || !wc)
+	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	// free the global data
-	WC_FREE(wc->global.ptr);
-	wc->global.len = 0;
+	if (wc->cbs.free_global_data) {
+		wc->cbs.free_global_data(wc, wc->cbs.user, &wc->globaldata);
+	} else {
+		// free the global data
+		WC_FREE(wc->globaldata.ptr);
+	}
+	wc->globaldata.ptr = NULL;
+	wc->globaldata.len = 0;
+	wc->state = WC_EXECSTATE_FREED_GLOBALDATA;
 	// call the on_finish event
-	if (*stateptr != WC_EXECSTATE_NOT_STARTED && wc->cbs.on_finish) {
+	if (wc->state != WC_EXECSTATE_NOT_STARTED && wc->cbs.on_finish) {
 		rc = wc->cbs.on_finish(wc, wc->cbs.user);
 		if (rc != WC_EXE_OK) {
 			WC_ERROR("Error in on_finish callback: %d\n", rc);
 		}
-		*stateptr = WC_EXECSTATE_FINISHED;
+		wc->state = WC_EXECSTATE_FINISHED;
 	}
 	return rc;
 }
 
-static wc_err_t wc_executor_master_run(wc_exec_t *wc, int *stateptr)
+static uint64_t wc_executor_tasks_per_system(const wc_opencl_t *ocl)
+{
+	uint64_t total_tasks = 0;
+	if (ocl) {
+		uint32_t idx;
+		for (idx = 0; idx < ocl->device_max; ++idx) {
+			const wc_cldev_t *dev = &ocl->devices[idx];
+			total_tasks += (dev->workgroup_sz * dev->compute_units);
+		}
+	}
+	return total_tasks;
+}
+
+static wc_err_t wc_executor_master_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
-	if (!wc || !stateptr)
+	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
 		// get task decomposition
@@ -312,54 +341,72 @@ static wc_err_t wc_executor_master_run(wc_exec_t *wc, int *stateptr)
 			}
 			WC_DEBUG("No of Tasks: %lu\n", wc->num_tasks);
 		}
-		*stateptr = WC_EXECSTATE_GOT_NUMTASKS;
+		wc->state = WC_EXECSTATE_GOT_NUMTASKS;
+		if (wc->cbs.get_task_range_multiplier) {
+			wc->task_range_multiplier = wc->cbs.get_task_range_multiplier(wc,
+										wc->cbs.user);
+		}
+		if (wc->task_range_multiplier < 1)
+			wc->task_range_multiplier = 1;
+		wc->state = WC_EXECSTATE_GOT_TASKRANGEMULTIPLIER;
 		//TODO: exchange the wc_runtime_t device information across the systems
+		// receive the device information from other systems
+
+		if (!wc->ocl_initialized) {
+			WC_ERROR("OpenCL is not initialized.\n");
+			rc = WC_EXE_ERR_BAD_STATE;
+			break;
+		}
+		wc->tasks_per_system = WC_MALLOC(wc->num_systems * sizeof(uint64_t));
+		if (!wc->tasks_per_system) {
+			WC_ERROR_OUTOFMEMORY(wc->num_systems * sizeof(uint64_t));
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		wc->tasks_per_system[wc->system_id] =
+						wc_executor_tasks_per_system(&wc->ocl);
+		wc->state = WC_EXECSTATE_GOT_TASKSPERSYSTEM;
+
 		if (wc->cbs.get_global_data) {
-			wc_data_t wcd = { 0 };
-			rc = wc->cbs.get_global_data(wc, wc->cbs.user, &wcd);
+			wc_data_t gdata = { 0 };
+			rc = wc->cbs.get_global_data(wc, wc->cbs.user, &gdata);
 			if (rc != WC_EXE_OK) {
 				WC_ERROR("Error retrieving global data: %d\n", rc);
 				break;
 			}
-			wc->global.ptr = wcd.ptr;
-			wc->global.len = wcd.len;
+			wc->globaldata.ptr = gdata.ptr;
+			wc->globaldata.len = gdata.len;
 		}
-		*stateptr = WC_EXECSTATE_GOT_GLOBALDATA;
+		wc->state = WC_EXECSTATE_GOT_GLOBALDATA;
 		//TODO: send the global data across
-
-		// XXX: Steps for invocation
-		// collect total number of tasks on the master, send to slaves later
-		// collect per task data on the master, send to slaves later
-		// collect global data on the master, send to slaves later
-		// process kernels on each system
-		// retrieve data for each kernel output
-		// send to master for aggregation
+		// TODO: Do data decomposition here
 	} while (0);
 	return rc;
 }
 
-static wc_err_t wc_executor_slave_run(wc_exec_t *wc, int *stateptr)
+static wc_err_t wc_executor_slave_run(wc_exec_t *wc)
 {
 	// TODO: receive the global data here
+	// send device information from other systems
+	//uint64_t tasks_per_system = wc_executor_tasks_per_system(&wc->ocl);
 	return WC_EXE_OK;
 }
 
 wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 {
-	int current_state;
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
-		cl_uint idx;
-		current_state = WC_EXECSTATE_NOT_STARTED;
-		rc = wc_executor_pre_run(wc, &current_state);
+		cl_event *events = NULL;
+		wc->state = WC_EXECSTATE_NOT_STARTED;
+		rc = wc_executor_pre_run(wc);
 		if (rc != WC_EXE_OK)
 			break;
 		if (wc->system_id == 0) {
-			rc = wc_executor_master_run(wc, &current_state);
+			rc = wc_executor_master_run(wc);
 		} else {
-			rc = wc_executor_slave_run(wc, &current_state);
+			rc = wc_executor_slave_run(wc);
 		}
 		if (rc != WC_EXE_OK)
 			break;
@@ -370,9 +417,11 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		}
 		// ok let's invoke the device start functions
 		if (wc->cbs.on_device_start) {
+			uint32_t idx;
 			for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-				wc_cldev_t *wcd = &(wc->ocl.devices[idx]);
-				rc = wc->cbs.on_device_start(wc, wcd, idx, wc->cbs.user);
+				wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+				rc = wc->cbs.on_device_start(wc, dev, idx, wc->cbs.user,
+											&wc->globaldata);
 				if (rc != WC_EXE_OK) {
 					WC_ERROR("Device %u returned error: %d\n", idx, rc);
 					break;
@@ -381,12 +430,78 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			if (rc != WC_EXE_OK)
 				break;
 		}
-		// TODO: we need to do the main stuff here
+		wc->state = WC_EXECSTATE_DEVICE_STARTED;
+		events = WC_MALLOC(sizeof(cl_event) * wc->ocl.device_max);
+		if (!events) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_event) * wc->ocl.device_max);
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(events, 0, sizeof(cl_event) * wc->ocl.device_max);
+		// TODO: we need to do the main stuff here for the current system
+		do {
+			uint64_t tasks_per_system;
+			uint64_t start, end;
+			int sid = wc->system_id;
+			uint64_t tasks_completed = 0;
+			uint32_t idx;
+			tasks_per_system = wc->tasks_per_system[sid] *
+								wc->task_range_multiplier;
+			tasks_completed = 0;
+			start = tasks_completed;
+			do {
+				rc = WC_EXE_OK;
+				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+					events[idx] = (cl_event)0;
+					end = start + tasks_per_system;
+					if (end >= wc->num_tasks)
+						end = wc->num_tasks;
+					rc = wc->cbs.on_device_run(wc, dev, idx, wc->cbs.user,
+							start, end, &events[idx], &wc->globaldata);
+
+					if (rc != WC_EXE_OK) {
+						WC_ERROR("Error occurred while running device work:"
+								" Range(%lu,%lu). Completed(%lu)\n",
+								start, end, tasks_completed);
+						break;
+					}
+					//TODO: Wait for events here
+					tasks_completed += end - start;
+					start = end;
+					if (start >= wc->num_tasks)
+						break;
+					if (tasks_completed >= wc->num_tasks)
+						break;
+				}
+				if (rc != WC_EXE_OK)
+					break;
+				if (wc->cbs.progress) {
+					double percent = ((double)(100.0 * tasks_completed)) / wc->num_tasks;
+					wc->cbs.progress((float)percent, wc->cbs.user);
+				}
+			} while (tasks_completed < wc->num_tasks);
+			// FIXME: move to OpencL file
+			for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+				if (events[idx]) {
+					int err = clReleaseEvent(events[idx]);
+					if (err != CL_SUCCESS)
+						WC_ERROR_OPENCL(clReleaseEvent, err);
+					events[idx] = (cl_event)0;
+				}
+			}
+		} while (0);
+		wc->state = WC_EXECSTATE_DEVICE_DONE_RUNNING;
+		WC_FREE(events);
+		if (rc != WC_EXE_OK)
+			break;
 		// let's invoke the device finish functions
 		if (wc->cbs.on_device_finish) {
+			uint32_t idx;
 			for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-				wc_cldev_t *wcd = &(wc->ocl.devices[idx]);
-				rc = wc->cbs.on_device_finish(wc, wcd, idx, wc->cbs.user);
+				wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+				rc = wc->cbs.on_device_finish(wc, dev, idx, wc->cbs.user,
+											&wc->globaldata);
 				if (rc != WC_EXE_OK) {
 					WC_ERROR("Device %u returned error: %d\n", idx, rc);
 					break;
@@ -395,6 +510,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			if (rc != WC_EXE_OK)
 				break;
 		}
+		wc->state = WC_EXECSTATE_DEVICE_FINISHED;
 		// XXX: Steps for invocation
 		// collect total number of tasks on the master, send to slaves later
 		// collect per task data on the master, send to slaves later
@@ -404,7 +520,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		// send to master for aggregation
 	} while (0);
 	// if rc had an earlier value keep that
-	rc |= wc_executor_post_run(wc, &current_state);
+	rc |= wc_executor_post_run(wc);
 	return rc;
 }
 
