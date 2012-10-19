@@ -185,9 +185,9 @@ void wc_user_dump(const struct wc_user *user)
 			WC_INFO("Max Devices to use: %u\n", user->max_devices);
 		else
 			WC_INFO("Max Devices to use: all available\n");
-		if (user->device_type == WC_DEVICE_CPU)
+		if (user->device_type == WC_DEVTYPE_CPU)
 			WC_INFO("CPU only\n");
-		if (user->device_type == WC_DEVICE_GPU)
+		if (user->device_type == WC_DEVTYPE_GPU)
 			WC_INFO("GPU only\n");
 		WC_INFO("No. of chars: %u\n", user->nchars);
 		WC_INFO("Charset: %s\n", wc_util_charset_tostring(user->charset));

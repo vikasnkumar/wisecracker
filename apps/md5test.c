@@ -22,6 +22,7 @@
  * Software: WiseCracker
  */
 #include <wisecracker.h>
+#include <wisecracker/runtime.h>
 #include <wisecracker/getopt.h>
 #ifdef WC_OPENSSL_MD5_H
 	#include <openssl/md5.h>

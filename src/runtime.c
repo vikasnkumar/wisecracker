@@ -22,6 +22,7 @@
  * Software: WiseCracker
  */
 #include <wisecracker.h>
+#include <wisecracker/runtime.h>
 
 #ifdef DEBUG
 	#define WC_PROFILING_ENABLE CL_QUEUE_PROFILING_ENABLE

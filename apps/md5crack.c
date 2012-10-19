@@ -22,6 +22,7 @@
  * Software: WiseCracker
  */
 #include <wisecracker.h>
+#include <wisecracker/runtime.h>
 #include <wisecracker/getopt.h>
 
 #ifndef MD5_DIGEST_LENGTH

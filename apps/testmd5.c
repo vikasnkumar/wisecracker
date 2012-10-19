@@ -131,9 +131,9 @@ void wc_user_dump(const struct wc_user *user)
 			WC_INFO("Max Devices to use: %u\n", user->max_devices);
 		else
 			WC_INFO("Max Devices to use: all available\n");
-		if (user->device_type == WC_DEVICE_CPU)
+		if (user->device_type == WC_DEVTYPE_CPU)
 			WC_INFO("CPU only\n");
-		if (user->device_type == WC_DEVICE_GPU)
+		if (user->device_type == WC_DEVTYPE_GPU)
 			WC_INFO("GPU only\n");
 		WC_INFO("Max Parallel Items: %lu\n", user->workitems);
 	}
@@ -388,6 +388,7 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 				&global_work_offset, &global_work_size, &local_work_size, 0,
 				NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
+		// here we force the wait and check results.
 		rc = clEnqueueReadBuffer(dev->cmdq, wcd->digest_mem, CL_TRUE, 0,
 				sizeof(cl_uchar16) * wcu->workitems, wcu->digest, 0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);

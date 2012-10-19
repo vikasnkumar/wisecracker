@@ -198,17 +198,17 @@ int wc_opencl_init(wc_devtype_t devt, uint32_t max_devices,
 		WC_ERROR_OPENCL_BREAK(clGetPlatformIDs, rc);
 		// find the device that you want
 		switch (devt) {
-		case WC_DEVICE_CPU:
+		case WC_DEVTYPE_CPU:
 			devtype = CL_DEVICE_TYPE_CPU;
 			WC_INFO("Picking only the CPU based devices.\n");
 			WC_DEBUG("Max devices for CPU has to be set to 1.\n");
 			max_devices = 1;
 			break;
-		case WC_DEVICE_GPU:
+		case WC_DEVTYPE_GPU:
 			devtype = CL_DEVICE_TYPE_GPU;
 			WC_INFO("Picking only the GPU based devices.\n");
 			break;
-		case WC_DEVICE_ANY:
+		case WC_DEVTYPE_ANY:
 			devtype = CL_DEVICE_TYPE_ALL;
 			WC_INFO("Picking CPU and/or GPU based devices.\n");
 			break;

@@ -26,7 +26,6 @@
 
 #include <wisecracker/config.h>
 #include <wisecracker/macros.h>
-#include <wisecracker/runtime.h>
 #include <wisecracker/executor.h>
 #include <wisecracker/utils.h>
 
