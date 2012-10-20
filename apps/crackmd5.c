@@ -316,7 +316,7 @@ uint64_t crackmd5_get_num_tasks(const wc_exec_t *wc, void *user)
 				wc_util_charset_tostring(wcu->charset), (int)zchars);
 		return 0;
 	}
-	WC_INFO("Max possibilities: %lu\n", max_possibilities);
+	WC_INFO("Max possibilities: %"PRIu64"\n", max_possibilities);
 	return max_possibilities;
 }
 
@@ -496,17 +496,17 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		memset(&(wcd->match), 0, sizeof(cl_uchar16));
 		// check for global_work_offset_limit here and adjust stride
 		if ((wcd->work_offset + wcd->work_size) >= offset_limit) {
-			WC_DEBUG("Work offset: %lu size: %lu for device[%u]\n",
-					wcd->work_offset, wcd->work_size, devindex);
+			WC_DEBUG("Work offset: %"PRIu64" size: %"PRIu64" for device[%u]\n",
+					(uint64_t)wcd->work_offset, (uint64_t)wcd->work_size, devindex);
 			wcd->stride += offset_limit;
 			wcd->work_offset = wcd->work_offset + wcd->work_size -
 								offset_limit;
 			rc |= clSetKernelArg(wcd->kernel, wcd->stride_argc,
 					sizeof(cl_ulong), &wcd->stride);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
-			WC_DEBUG("Global work offset reset to %lu. Stride: %lu\n",
-					wcd->work_offset, wcd->stride);
-			WC_DEBUG("Reset for kernel number: %lu\n", wcu->kernelcounter);
+			WC_DEBUG("Global work offset reset to %"PRIu64". Stride: %"PRIu64"\n",
+					(uint64_t)wcd->work_offset, wcd->stride);
+			WC_DEBUG("Reset for kernel number: %"PRIu64"\n", wcu->kernelcounter);
 		}
 		// enqueue the mem-write for the device
 		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->mem, CL_FALSE,
@@ -541,7 +541,7 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 	wcd = &wcu->devices[devindex];
 	if (wcd->match.s[0] != 0) {
 		int8_t l = 0;
-		WC_INFO("Found match in %luth kernel call: ", wcu->kernelcounter);
+		WC_INFO("Found match in %"PRIu64"th kernel call: ", wcu->kernelcounter);
 		for (l = 0; l < wcd->nchars; ++l)
 			WC_NULL("%c", wcd->match.s[l]);
 		WC_NULL("\n");

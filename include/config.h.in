@@ -144,6 +144,14 @@ EXTERN_C_BEGIN
 	#endif
 #endif
 
+#cmakedefine WC_INTTYPES_H
+#ifdef WC_INTTYPES_H
+#include <inttypes.h>
+#else
+	#define PRIu64 "lu"
+	#define PRId64 "ld"
+#endif
+
 #cmakedefine WC_STDARG_H
 #ifdef WC_STDARG_H
 #include <stdarg.h>

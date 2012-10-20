@@ -341,7 +341,7 @@ static wc_err_t wc_executor_master_run(wc_exec_t *wc)
 				rc = WC_EXE_ERR_INVALID_VALUE;
 				break;
 			}
-			WC_DEBUG("No of Tasks: %lu\n", wc->num_tasks);
+			WC_DEBUG("No of Tasks: %"PRIu64"\n", wc->num_tasks);
 		}
 		wc->state = WC_EXECSTATE_GOT_NUMTASKS;
 		if (wc->cbs.get_task_range_multiplier) {
@@ -513,7 +513,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 							&events[idx]);
 					if (rc != WC_EXE_OK) {
 						WC_ERROR("Error occurred while running device work:"
-								" Range(%lu,%lu). Completed(%lu)\n",
+								" Range(%"PRIu64",%"PRIu64"). Completed(%"PRIu64")\n",
 								start, end, tasks_completed);
 						break;
 					}

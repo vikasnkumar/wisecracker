@@ -419,7 +419,7 @@ void wc_opencl_dump(const wc_opencl_t *ocl)
 #define WC_OPENCL_PRINT_UNITS(STR,JDX,A) \
 do { \
 	char *unit_str = NULL; \
-	size_t val = 0; \
+	uint64_t val = 0; \
 	if (((A) / (1024 * 1024)) > 1) {\
 		unit_str = "MB"; \
 		val = (A) / (1024 * 1024); \
@@ -430,7 +430,7 @@ do { \
 		unit_str = "bytes"; \
 		val = (A); \
 	} \
-	WC_INFO(STR "%lu %s\n", (JDX), val, unit_str); \
+	WC_INFO(STR "%"PRIu64" %s\n", (JDX), val, unit_str); \
 } while (0)
 
 	WC_INFO("Total No. of platforms: %u\n", ocl->platform_max);
@@ -459,15 +459,15 @@ do { \
 					dev->address_bits);
 			WC_INFO("Device[%u] Compute Units: %u\n", devidx,
 					dev->compute_units);
-			WC_INFO("Device[%u] Workgroup size: %lu\n", devidx,
-					dev->workgroup_sz);
+			WC_INFO("Device[%u] Workgroup size: %"PRIu64"\n", devidx,
+					(uint64_t)dev->workgroup_sz);
 			WC_INFO("Device[%u] Work item dimension: %u\n", devidx,
 					dev->workitem_dim);
 			if (dev->workitem_sz) {
 				cl_uint kdx;
 				for (kdx = 0; kdx < dev->workitem_dim; ++kdx)
-					WC_INFO("Device[%u] Workitem[%u]: %lu\n", devidx, kdx,
-							dev->workitem_sz[kdx]);
+					WC_INFO("Device[%u] Workitem[%u]: %"PRIu64"\n", devidx, kdx,
+							(uint64_t)dev->workitem_sz[kdx]);
 			}
 			WC_OPENCL_PRINT_UNITS("Device[%u] Max alloc memory: ", devidx,
 								dev->allocmem_sz);

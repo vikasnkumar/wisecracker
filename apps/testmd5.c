@@ -344,7 +344,7 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 				CL_KERNEL_LOCAL_MEM_SIZE, sizeof(cl_ulong),
 				&localmem_per_kernel, NULL);
 		WC_ERROR_OPENCL_BREAK(clGetKernelWorkGroupInfo, rc);
-		WC_DEBUG("Local mem per kernel: %lu for device %u\n",
+		WC_DEBUG("Local mem per kernel: %"PRIu64" for device %u\n",
 				localmem_per_kernel, devindex);
 		wcd->l_bufsz = (cl_uint)localmem_per_kernel + 2 * maxblocksz;
 		argc = 0;
@@ -383,7 +383,7 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->inputlen_mem, CL_FALSE, 0,
 				sizeof(cl_uint) * wcu->workitems, wcu->input_len, 0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
-		WC_INFO("Global work size: %lu\n", global_work_size);
+		WC_INFO("Global work size: %"PRIu64"\n", (uint64_t)global_work_size);
 		rc = clEnqueueNDRangeKernel(dev->cmdq, wcd->kernel, workdim,
 				&global_work_offset, &global_work_size, &local_work_size, 0,
 				NULL, NULL);
