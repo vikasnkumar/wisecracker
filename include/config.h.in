@@ -148,8 +148,20 @@ EXTERN_C_BEGIN
 #ifdef WC_INTTYPES_H
 #include <inttypes.h>
 #else
-	#define PRIu64 "lu"
-	#define PRId64 "ld"
+	#ifndef PRIu64
+		#ifdef WIN32
+			#define PRIu64 "I64u"
+		#else
+			#define PRIu64 "lu"
+		#endif
+	#endif
+	#ifndef PRId64
+		#ifdef WIN32
+			#define PRId64 "I64d"
+		#else
+			#define PRId64 "ld"
+		#endif
+	#endif
 #endif
 
 #cmakedefine WC_STDARG_H
