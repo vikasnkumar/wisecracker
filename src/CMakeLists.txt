@@ -28,7 +28,7 @@ if (NOT WC_GETOPT_H)
 	set(UTIL_SRCS ${UTIL_SRCS} getopt.c)
 endif (NOT WC_GETOPT_H)
 
-set(RUNTIME_SRCS runtime.c executor.c mpi.c opencl.c)
+set(RUNTIME_SRCS executor.c mpi.c opencl.c)
 add_library(wisecracker_s STATIC ${RUNTIME_SRCS} ${UTIL_SRCS})
 target_link_libraries(wisecracker_s ${OPENCL_LIBS} ${OS_LIBS})
 if (USE_MPI)

@@ -30,34 +30,20 @@ add_custom_target(md5_cl.h ALL
 add_definitions(-DWC_MD5_CL="${MD5CL}")
 set(CLEAN_FILES md5_cl.h md5_cl.data ${CLEAN_FILES})
 
-add_executable(wisecrackmd5 md5crack.c)
+add_executable(wisecrackmd5 crackmd5.c)
 add_dependencies(wisecrackmd5 md5_cl.h)
 target_link_libraries(wisecrackmd5 wisecracker_s)
 # this is needed since we link with static
 set_target_properties(wisecrackmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
 install(TARGETS wisecrackmd5 RUNTIME DESTINATION bin)
 
-add_executable(crackmd5 crackmd5.c)
-add_dependencies(crackmd5 md5_cl.h)
-target_link_libraries(crackmd5 wisecracker_s)
-# this is needed since we link with static
-set_target_properties(crackmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
-install(TARGETS crackmd5 RUNTIME DESTINATION bin)
-
 if (USE_OPENSSL)
-	add_executable(wctestmd5 md5test.c)
-	add_dependencies(wctestmd5 md5_cl.h)
-	target_link_libraries(wctestmd5 wisecracker_s ${OPENSSL_LIBRARIES})
+	add_executable(wisetestmd5 testmd5.c)
+	add_dependencies(wisetestmd5 md5_cl.h)
+	target_link_libraries(wisetestmd5 wisecracker_s ${OPENSSL_LIBRARIES})
 	# this is needed since we link with static
-	set_target_properties(wctestmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
-	install(TARGETS wctestmd5 RUNTIME DESTINATION bin)
-
-	add_executable(testmd5 testmd5.c)
-	add_dependencies(testmd5 md5_cl.h)
-	target_link_libraries(testmd5 wisecracker_s ${OPENSSL_LIBRARIES})
-	# this is needed since we link with static
-	set_target_properties(testmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
-	install(TARGETS testmd5 RUNTIME DESTINATION bin)
+	set_target_properties(wisetestmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
+	install(TARGETS wisetestmd5 RUNTIME DESTINATION bin)
 endif (USE_OPENSSL)
 
 set_directory_properties(PROPERTIES ADDITIONAL_MAKE_CLEAN_FILES
