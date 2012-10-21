@@ -547,7 +547,7 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		WC_NULL("\n");
 		wcu->found = 1;
 		memcpy(&wcu->match, &wcd->match, sizeof(wcd->match));
-		return WC_EXE_ERR_ABORT;
+		return WC_EXE_ABORT;
 	}
 	return WC_EXE_OK;
 }

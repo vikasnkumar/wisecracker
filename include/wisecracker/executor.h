@@ -28,6 +28,7 @@ EXTERN_C_BEGIN
 
 #define WC_EXE_OK 0
 #define WC_EXE_ERR_NONE WC_EXE_OK
+#define WC_EXE_ABORT 1 /* not an error but an order */
 #define WC_EXE_ERR_BAD_STATE -1
 #define WC_EXE_ERR_OUTOFMEMORY -2
 #define WC_EXE_ERR_SYSTEM -3
@@ -36,7 +37,6 @@ EXTERN_C_BEGIN
 #define WC_EXE_ERR_INVALID_PARAMETER -6
 #define WC_EXE_ERR_MISSING_CALLBACK -7
 #define WC_EXE_ERR_INVALID_VALUE -8
-#define WC_EXE_ERR_ABORT -9
 #define WC_EXE_ERR_UNKNOWN INT_MIN
 
 typedef int wc_err_t;

@@ -556,7 +556,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 								device_ranges[idx].s[0],
 								device_ranges[idx].s[1]);
 						//TODO: send data back to master
-						if (err == WC_EXE_ERR_ABORT) {
+						if (err == WC_EXE_ABORT) {
 							WC_INFO("User requested abort.\n");
 							rc = err;
 							break;
@@ -582,7 +582,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		wc->state = WC_EXECSTATE_DEVICE_DONE_RUNNING;
 		WC_FREE(events);
 		WC_FREE(device_ranges);
-		if (rc != WC_EXE_OK && rc != WC_EXE_ERR_ABORT)
+		if (rc != WC_EXE_OK && rc != WC_EXE_ABORT)
 			break;
 		// let's invoke the device finish functions
 		if (wc->cbs.on_device_finish) {
