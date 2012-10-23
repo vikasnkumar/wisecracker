@@ -33,10 +33,11 @@ enum {
 	WC_EXECSTATE_GOT_CODE,
 	WC_EXECSTATE_GOT_BUILDOPTS,
 	WC_EXECSTATE_COMPILED_CODE,
+	WC_EXECSTATE_GOT_TASKS4SYSTEM,
+	WC_EXECSTATE_GOT_GLOBALDATA_LENGTH,
+	WC_EXECSTATE_GOT_GLOBALDATA,
 	WC_EXECSTATE_GOT_NUMTASKS,
 	WC_EXECSTATE_GOT_TASKRANGEMULTIPLIER,
-	WC_EXECSTATE_GOT_TASKSPERSYSTEM,
-	WC_EXECSTATE_GOT_GLOBALDATA,
 	WC_EXECSTATE_DEVICE_STARTED,
 	WC_EXECSTATE_DEVICE_DONE_RUNNING,
 	WC_EXECSTATE_DEVICE_FINISHED,
@@ -60,7 +61,8 @@ struct wc_executor_details {
 	wc_data_t globaldata;
 	int state;
 	// we track each system's total possibilities
-	uint64_t *tasks_per_system;
+	uint64_t my_tasks4system; // self-tasks-per-system
+	uint64_t *all_tasks4system; //array of num_systems for master
 	int64_t refcount;
 	cl_event userevent;
 };
@@ -118,7 +120,7 @@ void wc_executor_destroy(wc_exec_t *wc)
 			wc_opencl_finalize(&wc->ocl);
 			wc->ocl_initialized = 0;
 		}
-		WC_FREE(wc->tasks_per_system);
+		WC_FREE(wc->all_tasks4system);
 		WC_FREE(wc->globaldata.ptr);
 		wc->globaldata.len = 0;
 		WC_FREE(wc->code);
@@ -308,7 +310,7 @@ static wc_err_t wc_executor_post_run(wc_exec_t *wc)
 	return rc;
 }
 
-static uint64_t wc_executor_tasks_per_system(const wc_opencl_t *ocl)
+static uint64_t wc_executor_tasks4system(const wc_opencl_t *ocl)
 {
 	uint64_t total_tasks = 0;
 	if (ocl) {
@@ -327,8 +329,95 @@ static wc_err_t wc_executor_master_run(wc_exec_t *wc)
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
+		int idx;
+		// free the old stuff
+		WC_FREE(wc->all_tasks4system);
+		wc->all_tasks4system = WC_MALLOC(wc->num_systems * sizeof(uint64_t));
+		if (!wc->all_tasks4system) {
+			WC_ERROR_OUTOFMEMORY(wc->num_systems * sizeof(uint64_t));
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(wc->all_tasks4system, 0, sizeof(uint64_t) * wc->num_systems);
+		wc->my_tasks4system = wc_executor_tasks4system(&wc->ocl);
+		wc->all_tasks4system[wc->system_id] = wc->my_tasks4system;
+		// receive the data from all systems using MPI_Gather
+		if (wc->mpi_initialized) {
+			int err = wc_mpi_gather(&wc->my_tasks4system, 1,
+					MPI_UNSIGNED_LONG_LONG,
+					wc->all_tasks4system, wc->num_systems,
+					MPI_UNSIGNED_LONG_LONG, wc->system_id);
+			if (err < 0) {
+				WC_ERROR("Unable to share the tasks per system info."
+						" MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+		} else {
+			WC_WARN("MPI Not initialized. Not exchanging task info.\n");
+		}
+		wc->state = WC_EXECSTATE_GOT_TASKS4SYSTEM;
+		// dump the info you get from slaves
+		for (idx = 0; idx < wc->num_systems; ++idx) {
+			WC_DEBUG("System[%u] has tasks: %"PRIu64"\n", idx,
+					wc->all_tasks4system[idx]);
+		}
+		wc->globaldata.ptr = NULL;
+		wc->globaldata.len = 0;
+		// get and send the global data across
+		if (wc->cbs.get_global_data) {
+			wc_data_t gdata = { 0 };
+			rc = wc->cbs.get_global_data(wc, wc->cbs.user, &gdata);
+			if (rc != WC_EXE_OK) {
+				WC_ERROR("Error retrieving global data: %d\n", rc);
+				break;
+			}
+			wc->globaldata.ptr = gdata.ptr;
+			wc->globaldata.len = gdata.len;
+			if (wc->globaldata.ptr && wc->globaldata.len == 0) {
+				WC_ERROR("Global data pointer is not NULL but length is 0\n");
+				rc = WC_EXE_ERR_BAD_STATE;
+				break;
+			}
+		}
+		// inform the slaves to receive global data of given length. can be 0
+		// which means it will not receive any data
+		if (wc->mpi_initialized) {
+			int err = wc_mpi_broadcast(&wc->globaldata.len, 1, MPI_UNSIGNED,
+										wc->system_id);
+			if (err < 0) {
+				WC_ERROR("Unable to share the global data length information."
+						" MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+		} else {
+			WC_WARN("MPI Not initialized. Not sending global data length\n");
+		}
+		wc->state = WC_EXECSTATE_GOT_GLOBALDATA_LENGTH;
+		WC_DEBUG("Sent global data length: %u\n", wc->globaldata.len);
+		// send the global data across to all the systems
+		if (wc->globaldata.len > 0 && wc->mpi_initialized) {
+			int err = wc_mpi_broadcast(wc->globaldata.ptr,
+					(int)wc->globaldata.len, MPI_BYTE, wc->system_id);
+			if (err < 0) {
+				WC_ERROR("Unable to share the global data. MPI Error: %d\n",
+						err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+		} else {
+			if (!wc->globaldata.ptr || wc->globaldata.len == 0) {
+				WC_INFO("No global data to send.\n");
+			}
+			if (!wc->mpi_initialized && wc->globaldata.ptr) {
+				WC_WARN("MPI Not initialized. Not sending global data.\n");
+			}
+		}
+		wc->state = WC_EXECSTATE_GOT_GLOBALDATA;
+		WC_DEBUG("Sent global data across\n");
 		// get task decomposition
-		// TODO: we can add another callback to retrieve a more detailed
+		// FIXME: we can add another callback to retrieve a more detailed
 		// decomposition, but not yet
 		if (!wc->cbs.get_num_tasks) {
 			WC_ERROR("The get_num_tasks callback is missing\n");
@@ -351,36 +440,11 @@ static wc_err_t wc_executor_master_run(wc_exec_t *wc)
 		if (wc->task_range_multiplier < 1)
 			wc->task_range_multiplier = 1;
 		wc->state = WC_EXECSTATE_GOT_TASKRANGEMULTIPLIER;
-		//TODO: exchange the wc_runtime_t device information across the systems
-		// receive the device information from other systems
-
 		if (!wc->ocl_initialized) {
 			WC_ERROR("OpenCL is not initialized.\n");
 			rc = WC_EXE_ERR_BAD_STATE;
 			break;
 		}
-		wc->tasks_per_system = WC_MALLOC(wc->num_systems * sizeof(uint64_t));
-		if (!wc->tasks_per_system) {
-			WC_ERROR_OUTOFMEMORY(wc->num_systems * sizeof(uint64_t));
-			rc = WC_EXE_ERR_OUTOFMEMORY;
-			break;
-		}
-		wc->tasks_per_system[wc->system_id] =
-						wc_executor_tasks_per_system(&wc->ocl);
-		wc->state = WC_EXECSTATE_GOT_TASKSPERSYSTEM;
-
-		if (wc->cbs.get_global_data) {
-			wc_data_t gdata = { 0 };
-			rc = wc->cbs.get_global_data(wc, wc->cbs.user, &gdata);
-			if (rc != WC_EXE_OK) {
-				WC_ERROR("Error retrieving global data: %d\n", rc);
-				break;
-			}
-			wc->globaldata.ptr = gdata.ptr;
-			wc->globaldata.len = gdata.len;
-		}
-		wc->state = WC_EXECSTATE_GOT_GLOBALDATA;
-		//TODO: send the global data across
 		// TODO: Do data decomposition here
 	} while (0);
 	return rc;
@@ -390,8 +454,83 @@ static wc_err_t wc_executor_slave_run(wc_exec_t *wc)
 {
 	// TODO: receive the global data here
 	// send device information from other systems
-	//uint64_t tasks_per_system = wc_executor_tasks_per_system(&wc->ocl);
-	return WC_EXE_OK;
+	wc_err_t rc = WC_EXE_OK;
+	if (!wc)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	do {
+		uint32_t recvglob = 0;
+		wc->my_tasks4system = wc_executor_tasks4system(&wc->ocl);
+		// receive the data from all systems using MPI_Gather
+		if (wc->mpi_initialized) {
+			int err = wc_mpi_gather(&wc->my_tasks4system, 1,
+					MPI_UNSIGNED_LONG_LONG,
+					wc->all_tasks4system, wc->num_systems,
+					MPI_UNSIGNED_LONG_LONG, 0); // root id is 0
+			if (err < 0) {
+				WC_ERROR("Unable to share the tasks per system info."
+						" MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+		} else {
+			WC_WARN("MPI Not initialized. Not exchanging task info.\n");
+		}
+		wc->state = WC_EXECSTATE_GOT_TASKS4SYSTEM;
+		// get the global data length
+		recvglob = 0;
+		if (wc->mpi_initialized) {
+			int err = wc_mpi_broadcast(&recvglob, 1, MPI_UNSIGNED, 0);
+			if (err < 0) {
+				WC_ERROR("Unable to share the global data length information."
+						" MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+		} else {
+			WC_WARN("MPI Not initialized. Not receiving global data length\n");
+		}
+		wc->state = WC_EXECSTATE_GOT_GLOBALDATA_LENGTH;
+		wc->globaldata.ptr = NULL;
+		wc->globaldata.len = recvglob;
+		WC_DEBUG("Received global data length: %u\n", wc->globaldata.len);
+		// get the global data buffer if needed
+		if (wc->globaldata.len > 0 && wc->mpi_initialized) {
+			int err;
+			wc->globaldata.ptr = WC_MALLOC(wc->globaldata.len);
+			if (!wc->globaldata.ptr) {
+				WC_ERROR_OUTOFMEMORY(wc->globaldata.len);
+				rc = WC_EXE_ERR_OUTOFMEMORY;
+				break;
+			}
+			err = wc_mpi_broadcast(wc->globaldata.ptr, (int)wc->globaldata.len,
+									MPI_BYTE, 0);
+			if (err < 0) {
+				WC_ERROR("Unable to share the global data. MPI Error: %d\n",
+						err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+		} else {
+			if (!wc->globaldata.ptr || wc->globaldata.len == 0) {
+				WC_INFO("No global data to receive.\n");
+			}
+			if (!wc->mpi_initialized) {
+				WC_WARN("MPI Not initialized. Not receiving global data.\n");
+			}
+		}
+		WC_DEBUG("Received global data from master\n");
+		// now call the on_recv_globaldata callback on slaves only
+		if (wc->cbs.on_receive_global_data) {
+			rc = wc->cbs.on_receive_global_data(wc, wc->cbs.user,
+												&wc->globaldata);
+			if (rc != WC_EXE_OK) {
+				WC_ERROR("Error in on_receive_global_data callback: %d\n", rc);
+				break;
+			}
+		}
+		wc->state = WC_EXECSTATE_GOT_GLOBALDATA;
+	} while (0);
+	return rc;
 }
 
 void CL_CALLBACK wc_executor_device_event_notify(cl_event ev, cl_int status, void *user)
@@ -468,13 +607,13 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		memset(device_ranges, 0, sizeof(cl_ulong2) * wc->ocl.device_max);
 		// TODO: we need to do the main stuff here for the current system
 		do {
-			uint64_t tasks_per_system;
+			uint64_t tasks4system;
 			uint64_t start, end;
-			int sid = wc->system_id;
+//			int sid = wc->system_id;
 			uint64_t tasks_completed = 0;
 			uint32_t idx;
 
-			tasks_per_system = wc->tasks_per_system[sid] *
+			tasks4system = wc->my_tasks4system *
 								wc->task_range_multiplier;
 			tasks_completed = 0;
 			start = tasks_completed;
@@ -503,7 +642,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
 					events[idx] = (cl_event)0;
-					end = start + tasks_per_system;
+					end = start + tasks4system;
 					if (end >= wc->num_tasks)
 						end = wc->num_tasks;
 					device_ranges[idx].s[0] = start;
@@ -548,6 +687,8 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 						rc |= clReleaseEvent(events[idx]);
 					events[idx] = (cl_event)0;
 				}
+				//FIXME; should we call this on demand @ every event callback or
+				//wait for the collection of events to complete first ?
 				if (wc->cbs.on_device_range_done) {
 					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 						wc_cldev_t *dev = &(wc->ocl.devices[idx]);

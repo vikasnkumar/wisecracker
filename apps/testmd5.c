@@ -282,7 +282,7 @@ wc_err_t testmd5_get_global_data(const wc_exec_t *wc, void *user,
 {
 	struct wc_user *wcu = (struct wc_user *)user;
 	const cl_uint maxblocksz = MAX_BLOCK_LEN;
-	cl_uint ilen = 0;
+	uint32_t ilen = 0;
 	cl_uint idx;
 	cl_uchar *input = NULL;
 	if (!wcu || !out)

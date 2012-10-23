@@ -51,7 +51,7 @@ typedef enum {
 
 typedef struct {
 	void *ptr;
-	size_t len;
+	uint32_t len; // to be safe from 32/64 bit mixed systems
 } wc_data_t;
 
 typedef struct {
@@ -85,6 +85,8 @@ typedef struct {
 	wc_err_t (*get_global_data)(const wc_exec_t *wc, void *user,
 			wc_data_t *out);
 	uint32_t (*get_task_range_multiplier)(const wc_exec_t *wc, void *user);
+	wc_err_t (*on_receive_global_data)(const wc_exec_t *wc, void *user,
+			wc_data_t *gdata);
 
 	wc_err_t (*on_device_start)(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user, wc_data_t *gdata);

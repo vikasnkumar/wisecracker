@@ -27,7 +27,10 @@
 #ifdef WC_MPI_H
 	#include <mpi.h>
 #else
+	#define MPI_BYTE (void *)0
 	#define MPI_INT (void *)0
+	#define MPI_UNSIGNED_LONG_LONG (void *)0
+	#define MPI_UNSIGNED (void *)0
 #endif
 int wc_mpi_init(int *argc, char ***argv);
 
@@ -40,5 +43,8 @@ int wc_mpi_peer_count();
 int wc_mpi_peer_id();
 
 int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id);
+
+int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
+					int rcount, void *recvtype, int master_id);
 
 #endif // __WISECRACKER_MPI_INTERNAL_H__

@@ -384,7 +384,7 @@ wc_err_t crackmd5_get_global_data(const wc_exec_t *wc, void *user,
 
 	gd->charset = (cl_uint)wcu->charset;
 	out->ptr = gd;
-	out->len = sizeof(*gd);
+	out->len = (uint32_t)sizeof(*gd);
 	return WC_EXE_OK;
 }
 

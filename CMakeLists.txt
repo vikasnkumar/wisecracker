@@ -38,7 +38,7 @@ option(USE_OPENSSL "Use OpenSSL" ON)
 if (APPLE OR WIN32)
 	option(USE_MPI "Use MPI" OFF)
 else (APPLE OR WIN32)
-	option(USE_MPI "Use MPI" OFF)
+	option(USE_MPI "Use MPI" ON)
 endif (APPLE OR WIN32)
 
 # Custom includes

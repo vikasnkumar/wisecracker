@@ -82,6 +82,19 @@ int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id)
 	return rc;
 }
 
+int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
+					int rcount, void *recvtype, int master_id)
+{
+	int rc = 0;
+	if (sendbuf && recvbuf) {
+		rc = MPI_Gather(sendbuf, scount, sendtype, recvbuf, rcount, master_id,
+						MPI_COMM_WORLD);
+		WC_HANDLE_MPI_ERROR(MPI_Gather, rc);
+		return rc;
+	}
+	return -1;
+}
+
 #else
 
 int wc_mpi_init(int *argc, char ***argv)
@@ -109,6 +122,12 @@ int wc_mpi_peer_id()
 }
 
 int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id)
+{
+	return 0;
+}
+
+int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
+				int rcount, void *recvtype, int master_id)
 {
 	return 0;
 }

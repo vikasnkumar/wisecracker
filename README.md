@@ -46,7 +46,7 @@ $ ./wisecrackmd5  -h
 
 To test the software with an MD5 sum one can try:
 
-$ ./wisecrackmd5 -p abcd -M a3118ebd990c3506ddd1a77be6962faf
+$ ./wisecrackmd5 -p abcd -M a3118ebd990c3506ddd1a77be6962faf -N 8 -C alnumspl
 
 This will find the correct string "abcd9_Z$" that gives the MD5 sum
 a3118ebd990c3506ddd1a77be6962faf in about 5-6 seconds.
