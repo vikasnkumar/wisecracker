@@ -344,8 +344,7 @@ static wc_err_t wc_executor_master_run(wc_exec_t *wc)
 		// receive the data from all systems using MPI_Gather
 		if (wc->mpi_initialized) {
 			int err = wc_mpi_gather(&wc->my_tasks4system, 1,
-					MPI_UNSIGNED_LONG_LONG,
-					wc->all_tasks4system, wc->num_systems,
+					MPI_UNSIGNED_LONG_LONG, wc->all_tasks4system, 1,
 					MPI_UNSIGNED_LONG_LONG, wc->system_id);
 			if (err < 0) {
 				WC_ERROR("Unable to share the tasks per system info."
@@ -452,19 +451,17 @@ static wc_err_t wc_executor_master_run(wc_exec_t *wc)
 
 static wc_err_t wc_executor_slave_run(wc_exec_t *wc)
 {
-	// TODO: receive the global data here
-	// send device information from other systems
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
 		uint32_t recvglob = 0;
+		// send device information from other systems
 		wc->my_tasks4system = wc_executor_tasks4system(&wc->ocl);
 		// receive the data from all systems using MPI_Gather
 		if (wc->mpi_initialized) {
 			int err = wc_mpi_gather(&wc->my_tasks4system, 1,
-					MPI_UNSIGNED_LONG_LONG,
-					wc->all_tasks4system, wc->num_systems,
+					MPI_UNSIGNED_LONG_LONG, wc->all_tasks4system, 1,
 					MPI_UNSIGNED_LONG_LONG, 0); // root id is 0
 			if (err < 0) {
 				WC_ERROR("Unable to share the tasks per system info."
@@ -476,6 +473,7 @@ static wc_err_t wc_executor_slave_run(wc_exec_t *wc)
 			WC_WARN("MPI Not initialized. Not exchanging task info.\n");
 		}
 		wc->state = WC_EXECSTATE_GOT_TASKS4SYSTEM;
+		// receive the global data here
 		// get the global data length
 		recvglob = 0;
 		if (wc->mpi_initialized) {
