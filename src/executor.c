@@ -877,7 +877,7 @@ void wc_executor_dump(const wc_exec_t *wc)
 		if (wc->mpi_initialized) {
 			WC_INFO("MPI has been initialized successfully.\n");
 		}
-		WC_INFO("No, of Systems: %d\n", wc->num_systems);
+		WC_INFO("No. of Systems: %d\n", wc->num_systems);
 		WC_INFO("My System Id: %d\n", wc->system_id);
 		if (wc->ocl_initialized) {
 			WC_INFO("OpenCL has been initialized successfully.\n");

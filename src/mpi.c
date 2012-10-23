@@ -70,7 +70,7 @@ int wc_mpi_peer_id()
 	int value = 0;
 	int rc = 0;
 	rc = MPI_Comm_rank(MPI_COMM_WORLD, &value);
-	WC_HANDLE_MPI_ERROR(MPI_Comm_size, rc);
+	WC_HANDLE_MPI_ERROR(MPI_Comm_rank, rc);
 	return (rc == MPI_SUCCESS) ? value : -1;
 }
 
