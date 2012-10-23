@@ -38,6 +38,8 @@ enum {
 	WC_EXECSTATE_GOT_GLOBALDATA,
 	WC_EXECSTATE_GOT_NUMTASKS,
 	WC_EXECSTATE_GOT_TASKRANGEMULTIPLIER,
+	WC_EXECSTATE_DATA_DECOMPOSED,
+	WC_EXECSTATE_GOT_TASKRANGES,
 	WC_EXECSTATE_DEVICE_STARTED,
 	WC_EXECSTATE_DEVICE_DONE_RUNNING,
 	WC_EXECSTATE_DEVICE_FINISHED,
@@ -63,6 +65,8 @@ struct wc_executor_details {
 	// we track each system's total possibilities
 	uint64_t my_tasks4system; // self-tasks-per-system
 	uint64_t *all_tasks4system; //array of num_systems for master
+	uint64_t my_task_range[2]; // my range of tasks
+	uint64_t *task_ranges; // range of tasks per system
 	int64_t refcount;
 	cl_event userevent;
 };
@@ -120,6 +124,7 @@ void wc_executor_destroy(wc_exec_t *wc)
 			wc_opencl_finalize(&wc->ocl);
 			wc->ocl_initialized = 0;
 		}
+		WC_FREE(wc->task_ranges);
 		WC_FREE(wc->all_tasks4system);
 		WC_FREE(wc->globaldata.ptr);
 		wc->globaldata.len = 0;
@@ -323,13 +328,14 @@ static uint64_t wc_executor_tasks4system(const wc_opencl_t *ocl)
 	return total_tasks;
 }
 
-static wc_err_t wc_executor_master_run(wc_exec_t *wc)
+static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
 		int idx;
+		uint64_t sum_tasks, num_rounds, start, end;
 		// free the old stuff
 		WC_FREE(wc->all_tasks4system);
 		wc->all_tasks4system = WC_MALLOC(wc->num_systems * sizeof(uint64_t));
@@ -444,20 +450,78 @@ static wc_err_t wc_executor_master_run(wc_exec_t *wc)
 			rc = WC_EXE_ERR_BAD_STATE;
 			break;
 		}
-		// TODO: Do data decomposition here
+		// Do data decomposition here
+		WC_FREE(wc->task_ranges);
+		wc->task_ranges = WC_MALLOC(wc->num_systems * sizeof(uint64_t) * 2);
+		if (!wc->task_ranges) {
+			WC_ERROR_OUTOFMEMORY(wc->num_systems * sizeof(uint64_t) * 2);
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(wc->task_ranges, 0, sizeof(wc->task_ranges));
+		sum_tasks = 0;
+		for (idx = 0; idx < wc->num_systems; ++idx)
+			sum_tasks += wc->all_tasks4system[idx];
+		if (sum_tasks >= wc->num_tasks)
+			num_rounds = 1;
+		else
+			num_rounds = (wc->num_tasks / sum_tasks) +
+						((wc->num_tasks % sum_tasks) ? 1 : 0);
+		if (num_rounds <= 1)
+			num_rounds = 1;
+		// create system task ranges
+		start = end = 0;
+		for (idx = 0; idx < wc->num_systems; ++idx) {
+			end += wc->all_tasks4system[idx] * wc->task_range_multiplier *
+					num_rounds;
+			wc->task_ranges[2 * idx] = start;
+			wc->task_ranges[2 * idx + 1] = end;
+			start = end;
+			if (end >= wc->num_tasks)
+				break;
+		}
+		wc->state = WC_EXECSTATE_DATA_DECOMPOSED;
+		wc->my_task_range[0] = wc->task_ranges[2 * wc->system_id];
+		wc->my_task_range[1] = wc->task_ranges[2 * wc->system_id + 1];
+		// ok now scatter the data across the slaves
+		if (wc->mpi_initialized) {
+			int err = wc_mpi_scatter(wc->task_ranges, 2,
+						MPI_UNSIGNED_LONG_LONG, wc->my_task_range, 2,
+						MPI_UNSIGNED_LONG_LONG, wc->system_id);
+			if (err < 0) {
+				WC_ERROR("Unable to share the tasks ranges with others."
+						" MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+		} else {
+			WC_WARN("MPI Not initialized. Not sending task ranges \n");
+		}
+		wc->state = WC_EXECSTATE_GOT_TASKRANGES;
 	} while (0);
 	return rc;
 }
 
-static wc_err_t wc_executor_slave_run(wc_exec_t *wc)
+static wc_err_t wc_executor_slave_pre_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
 		uint32_t recvglob = 0;
+		// free the old stuff. allocate just to be safe from bad MPI
+		// implementations
+		WC_FREE(wc->all_tasks4system);
+		wc->all_tasks4system = WC_MALLOC(wc->num_systems * sizeof(uint64_t));
+		if (!wc->all_tasks4system) {
+			WC_ERROR_OUTOFMEMORY(wc->num_systems * sizeof(uint64_t));
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(wc->all_tasks4system, 0, sizeof(uint64_t) * wc->num_systems);
 		// send device information from other systems
 		wc->my_tasks4system = wc_executor_tasks4system(&wc->ocl);
+		wc->all_tasks4system[wc->system_id] = wc->my_tasks4system;
 		// receive the data from all systems using MPI_Gather
 		if (wc->mpi_initialized) {
 			int err = wc_mpi_gather(&wc->my_tasks4system, 1,
@@ -527,6 +591,35 @@ static wc_err_t wc_executor_slave_run(wc_exec_t *wc)
 			}
 		}
 		wc->state = WC_EXECSTATE_GOT_GLOBALDATA;
+		// we might not need this allocation but just want to be safe from MPI
+		// implementation differences
+		WC_FREE(wc->task_ranges);
+		wc->task_ranges = WC_MALLOC(wc->num_systems * sizeof(uint64_t) * 2);
+		if (!wc->task_ranges) {
+			WC_ERROR_OUTOFMEMORY(wc->num_systems * sizeof(uint64_t) * 2);
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(wc->task_ranges, 0, sizeof(wc->task_ranges));
+		wc->my_task_range[0] = 0;
+		wc->my_task_range[1] = 0;
+		// wait for getting task division from the master
+		if (wc->mpi_initialized) {
+			int err = wc_mpi_scatter(wc->task_ranges, 2,
+						MPI_UNSIGNED_LONG_LONG, wc->my_task_range, 2,
+						MPI_UNSIGNED_LONG_LONG, 0);
+			if (err < 0) {
+				WC_ERROR("Unable to get the task range from the master."
+						" MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+			wc->task_ranges[2 * wc->system_id] = wc->my_task_range[0];
+			wc->task_ranges[2 * wc->system_id + 1] = wc->my_task_range[1];
+		} else {
+			WC_WARN("MPI Not initialized. Not receiving task ranges \n");
+		}
+		wc->state = WC_EXECSTATE_GOT_TASKRANGES;
 	} while (0);
 	return rc;
 }
@@ -549,7 +642,7 @@ void CL_CALLBACK wc_executor_device_event_notify(cl_event ev, cl_int status, voi
 	}
 }
 
-wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
+wc_err_t wc_executor_system_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
@@ -557,18 +650,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 	do {
 		cl_event *events = NULL;
 		cl_ulong2 *device_ranges = NULL;
-		wc->state = WC_EXECSTATE_NOT_STARTED;
-		rc = wc_executor_pre_run(wc);
-		if (rc != WC_EXE_OK)
-			break;
-		if (wc->system_id == 0) {
-			rc = wc_executor_master_run(wc);
-		} else {
-			rc = wc_executor_slave_run(wc);
-		}
-		if (rc != WC_EXE_OK)
-			break;
-		if (!wc_opencl_is_usable(&wc->ocl)) {
+		if (!wc->ocl_initialized || !wc_opencl_is_usable(&wc->ocl)) {
 			WC_ERROR("OpenCL internal runtime is not usable\n");
 			rc = WC_EXE_ERR_BAD_STATE;
 			break;
@@ -603,19 +685,18 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 			break;
 		}
 		memset(device_ranges, 0, sizeof(cl_ulong2) * wc->ocl.device_max);
-		// TODO: we need to do the main stuff here for the current system
+		// we need to do the main stuff here for the current system
 		do {
-			uint64_t tasks4system;
-			uint64_t start, end;
-//			int sid = wc->system_id;
 			uint64_t tasks_completed = 0;
 			uint32_t idx;
+			uint64_t num_tasks = 0;
 
-			tasks4system = wc->my_tasks4system *
-								wc->task_range_multiplier;
 			tasks_completed = 0;
-			start = tasks_completed;
+			num_tasks = wc->my_task_range[1] - wc->my_task_range[0];
+			if (num_tasks == 0)
+				break;
 			do {
+				uint64_t start, end;
 				rc = WC_EXE_OK;
 				wc->refcount = 0;
 				wc->userevent = (cl_event)0;
@@ -637,12 +718,17 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 					WC_WARN("User event failed to set. Shaky state\n");
 					break;
 				}
+				start = wc->my_task_range[0];
+				end = 0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+					uint64_t tasks4system;
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
 					events[idx] = (cl_event)0;
+					tasks4system = dev->workgroup_sz * dev->compute_units *
+									wc->task_range_multiplier;
 					end = start + tasks4system;
-					if (end >= wc->num_tasks)
-						end = wc->num_tasks;
+					if (end >= wc->my_task_range[1])
+						end = wc->my_task_range[1];
 					device_ranges[idx].s[0] = start;
 					device_ranges[idx].s[1] = end;
 					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
@@ -668,9 +754,9 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 					WC_ERROR_OPENCL_BREAK(clFlush, rc);
 					tasks_completed += end - start;
 					start = end;
-					if (start >= wc->num_tasks)
+					if (start >= wc->my_task_range[1])
 						break;
-					if (tasks_completed >= wc->num_tasks)
+					if (tasks_completed >= num_tasks)
 						break;
 				}
 				if (rc != WC_EXE_OK || rc < 0)
@@ -709,12 +795,12 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 				}
 				if (wc->cbs.progress) {
 					double percent = ((double)(100.0 * tasks_completed)) /
-															wc->num_tasks;
+															num_tasks;
 					wc->cbs.progress((float)percent, wc->cbs.user);
 				}
 				if (rc != WC_EXE_OK)
 					break;
-			} while (tasks_completed < wc->num_tasks);
+			} while (tasks_completed < num_tasks);
 			if (rc != WC_EXE_OK)
 				break;
 		} while (0);
@@ -740,8 +826,35 @@ wc_err_t wc_executor_run(wc_exec_t *wc, long timeout)
 		}
 		wc->state = WC_EXECSTATE_DEVICE_FINISHED;
 	} while (0);
-	// if rc had an earlier value keep that
-	rc |= wc_executor_post_run(wc);
+	return rc;
+}
+
+wc_err_t wc_executor_run(wc_exec_t *wc)
+{
+	wc_err_t rc = WC_EXE_OK;
+	if (!wc)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	do {
+		wc->state = WC_EXECSTATE_NOT_STARTED;
+		rc = wc_executor_pre_run(wc);
+		if (rc != WC_EXE_OK)
+			break;
+		if (wc->system_id == 0) {
+			rc = wc_executor_master_pre_run(wc);
+		} else {
+			rc = wc_executor_slave_pre_run(wc);
+		}
+		if (rc != WC_EXE_OK)
+			break;
+		rc = wc_executor_system_run(wc);
+		if (rc != WC_EXE_OK) {
+			WC_WARN("error occurred during the run: %d\n", rc);
+		}
+		// continue to finish up the post run despite errors
+		rc |= wc_executor_post_run(wc);
+		if (rc != WC_EXE_OK)
+			break;
+	} while (0);
 	return rc;
 }
 

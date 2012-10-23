@@ -95,6 +95,18 @@ int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
 	return -1;
 }
 
+int wc_mpi_scatter(void *sendbuf, int scount, void *sendtype, void *recvbuf,
+				int rcount, void *recvtype, int master_id)
+{
+	int rc = 0;
+	if (sendbuf && recvbuf) {
+		rc = MPI_Scatter(sendbuf, scount, sendtype, recvbuf, rcount, master_id,
+						MPI_COMM_WORLD);
+		WC_HANDLE_MPI_ERROR(MPI_Scatter, rc);
+		return rc;
+	}
+	return -1;
+}
 #else
 
 int wc_mpi_init(int *argc, char ***argv)
@@ -127,6 +139,12 @@ int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id)
 }
 
 int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
+				int rcount, void *recvtype, int master_id)
+{
+	return 0;
+}
+
+int wc_mpi_scatter(void *sendbuf, int scount, void *sendtype, void *recvbuf,
 				int rcount, void *recvtype, int master_id)
 {
 	return 0;

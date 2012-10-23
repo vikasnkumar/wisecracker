@@ -47,4 +47,7 @@ int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id);
 int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
 					int rcount, void *recvtype, int master_id);
 
+int wc_mpi_scatter(void *sendbuf, int scound, void *sendtype, void *recvbuf,
+					int rcount, void *recvtype, int master_id);
+
 #endif // __WISECRACKER_MPI_INTERNAL_H__

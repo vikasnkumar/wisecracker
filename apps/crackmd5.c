@@ -631,7 +631,7 @@ int main(int argc, char **argv)
 		}
 		// print information of the executor object on screen
 		wc_executor_dump(wc);
-		err = wc_executor_run(wc, 0);
+		err = wc_executor_run(wc);
 		if (err != WC_EXE_OK) {
 			WC_ERROR("Unable to crack MD5 sum. Error: %d\n", err);
 			break;
