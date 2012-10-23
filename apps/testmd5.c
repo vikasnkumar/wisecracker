@@ -308,7 +308,7 @@ wc_err_t testmd5_get_global_data(const wc_exec_t *wc, void *user,
 
 wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user,
-								wc_data_t *gdata)
+								const wc_data_t *gdata)
 {
 	cl_int rc = CL_SUCCESS;
 	struct wc_user *wcu = (struct wc_user *)user;
@@ -361,7 +361,7 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 
 wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user,
-								wc_data_t *gdata,
+								const wc_data_t *gdata,
 								uint64_t start, uint64_t end,
 								cl_event *outevent)
 {
@@ -398,7 +398,7 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 
 wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user,
-								wc_data_t *gdata,
+								const wc_data_t *gdata,
 								uint64_t start, uint64_t end)
 {
 	cl_int rc = CL_SUCCESS;
@@ -409,7 +409,7 @@ wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		return WC_EXE_ERR_BAD_STATE;
 	do {
 		uint32_t jdx;
-		cl_uchar *input = (cl_uchar *)gdata->ptr;
+		const cl_uchar *input = (cl_uchar *)gdata->ptr;
 		const int maxblocksz = MAX_BLOCK_LEN;
 		for (jdx = 0; jdx < wcu->workitems; ++jdx) {
 			cl_uchar md[MD5_DIGEST_LENGTH];
@@ -425,7 +425,7 @@ wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 
 wc_err_t testmd5_on_device_finish(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user,
-								wc_data_t *gdata)
+								const wc_data_t *gdata)
 {
 	cl_int rc = CL_SUCCESS;
 	struct wc_user *wcu = (struct wc_user *)user;

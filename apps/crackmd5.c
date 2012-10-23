@@ -422,17 +422,17 @@ void crackmd5_progress(float percent, void *user)
 }
 
 wc_err_t crackmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
-		uint32_t devindex, void *user, wc_data_t *gdata)
+		uint32_t devindex, void *user, const wc_data_t *gdata)
 {
 	struct wc_user *wcu = (struct wc_user *)user;
 	cl_int rc = CL_SUCCESS;
-	struct wc_global_data *gd = NULL;
+	const struct wc_global_data *gd = NULL;
 	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	if (!wcu->devices || devindex >= wcu->num_devices ||
 			gdata->len < sizeof(*gd))
 		return WC_EXE_ERR_BAD_STATE;
-	gd = (struct wc_global_data *)gdata->ptr;
+	gd = (const struct wc_global_data *)gdata->ptr;
 
 	do {
 		cl_uint argc = 0;
@@ -466,18 +466,18 @@ wc_err_t crackmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 }
 
 wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
-		uint32_t devindex, void *user, wc_data_t *gdata,
+		uint32_t devindex, void *user, const wc_data_t *gdata,
 		uint64_t start, uint64_t end, cl_event *outevent)
 {
 	struct wc_user *wcu = (struct wc_user *)user;
 	cl_int rc = CL_SUCCESS;
-	struct wc_global_data *gd = NULL;
+	const struct wc_global_data *gd = NULL;
 	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	if (!wcu->devices || devindex >= wcu->num_devices ||
 			gdata->len < sizeof(*gd))
 		return WC_EXE_ERR_BAD_STATE;
-	gd = (struct wc_global_data *)gdata->ptr;
+	gd = (const struct wc_global_data *)gdata->ptr;
 	do {
 		const cl_uint workdim = 1;
 		uint64_t offset_limit = 0;
@@ -528,7 +528,7 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 }
 
 wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
-		uint32_t devindex, void *user, wc_data_t *gdata,
+		uint32_t devindex, void *user, const wc_data_t *gdata,
 		uint64_t start, uint64_t end)
 {
 	struct wc_user *wcu = (struct wc_user *)user;
@@ -553,7 +553,7 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 }
 
 wc_err_t crackmd5_on_device_finish(const wc_exec_t *wc, wc_cldev_t *dev,
-		uint32_t devindex, void *user, wc_data_t *gdata)
+		uint32_t devindex, void *user, const wc_data_t *gdata)
 {
 	struct wc_user *wcu = (struct wc_user *)user;
 	cl_int rc = CL_SUCCESS;
@@ -613,9 +613,9 @@ int main(int argc, char **argv)
 		callbacks.get_code = crackmd5_get_code;
 		callbacks.get_build_options = crackmd5_get_buildopts;
 		callbacks.get_num_tasks = crackmd5_get_num_tasks;
+		callbacks.get_task_range_multiplier = crackmd5_get_multiplier;
 		callbacks.on_code_compile = crackmd5_on_compile;
 		callbacks.get_global_data = crackmd5_get_global_data;
-		callbacks.get_task_range_multiplier = crackmd5_get_multiplier;
 		callbacks.on_device_start = crackmd5_on_device_start;
 		callbacks.on_device_finish = crackmd5_on_device_finish;
 		callbacks.on_device_range_exec = crackmd5_on_device_range_exec;

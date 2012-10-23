@@ -82,25 +82,24 @@ typedef struct {
 	void (*on_code_compile)(const wc_exec_t *wc, void *user, uint8_t success);
 
 	uint64_t (*get_num_tasks)(const wc_exec_t *wc, void *user);
-	wc_err_t (*get_global_data)(const wc_exec_t *wc, void *user,
-			wc_data_t *out);
 	uint32_t (*get_task_range_multiplier)(const wc_exec_t *wc, void *user);
+	wc_err_t (*get_global_data)(const wc_exec_t *wc, void *user,
+						wc_data_t *out);
 	wc_err_t (*on_receive_global_data)(const wc_exec_t *wc, void *user,
-			wc_data_t *gdata);
+						wc_data_t *gdata);
 
 	wc_err_t (*on_device_start)(const wc_exec_t *wc, wc_cldev_t *dev,
-								uint32_t devindex, void *user, wc_data_t *gdata);
+						uint32_t devindex, void *user, const wc_data_t *gdata);
 	wc_err_t (*on_device_finish)(const wc_exec_t *wc, wc_cldev_t *dev,
-								uint32_t devindex, void *user, wc_data_t *gdata);
+						uint32_t devindex, void *user, const wc_data_t *gdata);
 	wc_err_t (*on_device_range_exec)(const wc_exec_t *wc, wc_cldev_t *dev,
-							uint32_t devindex, void *user, wc_data_t *gdata,
-							uint64_t start, uint64_t end,
-							cl_event *out_event);
+						uint32_t devindex, void *user, const wc_data_t *gdata,
+						uint64_t start, uint64_t end, cl_event *out_event);
 	wc_err_t (*on_device_range_done)(const wc_exec_t *wc, wc_cldev_t *dev,
-							uint32_t devindex, void *user, wc_data_t *gdata,
-							uint64_t start, uint64_t end);
+						uint32_t devindex, void *user, const wc_data_t *gdata,
+						uint64_t start, uint64_t end);
 	void (*free_global_data)(const wc_exec_t *wc, void *user,
-			wc_data_t *gdata);
+						wc_data_t *gdata);
 	void (*progress)(float percent, void *user);
 } wc_exec_callbacks_t;
 
