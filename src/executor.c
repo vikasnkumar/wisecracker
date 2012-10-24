@@ -445,6 +445,7 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 		if (wc->task_range_multiplier < 1)
 			wc->task_range_multiplier = 1;
 		wc->state = WC_EXECSTATE_GOT_TASKRANGEMULTIPLIER;
+		WC_DEBUG("Task Range multiplier: %u\n", wc->task_range_multiplier);
 		if (!wc->ocl_initialized) {
 			WC_ERROR("OpenCL is not initialized.\n");
 			rc = WC_EXE_ERR_BAD_STATE;
@@ -462,6 +463,7 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 		sum_tasks = 0;
 		for (idx = 0; idx < wc->num_systems; ++idx)
 			sum_tasks += wc->all_tasks4system[idx];
+		sum_tasks *= wc->task_range_multiplier;
 		if (sum_tasks >= wc->num_tasks)
 			num_rounds = 1;
 		else
@@ -469,6 +471,7 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 						((wc->num_tasks % sum_tasks) ? 1 : 0);
 		if (num_rounds <= 1)
 			num_rounds = 1;
+		WC_DEBUG("no. of rounds %"PRIu64"\n", num_rounds);
 		// create system task ranges
 		start = end = 0;
 		for (idx = 0; idx < wc->num_systems; ++idx) {
@@ -819,6 +822,7 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 						}
 					}
 				}
+				// TODO: call progress only on master based on tasks completed
 				if (wc->cbs.progress) {
 					double percent = ((double)(100.0 * tasks_completed)) /
 															num_tasks;
