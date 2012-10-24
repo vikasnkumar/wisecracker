@@ -28,7 +28,7 @@ EXTERN_C_BEGIN
 
 #define WC_EXE_OK 0
 #define WC_EXE_ERR_NONE WC_EXE_OK
-#define WC_EXE_ABORT 1 /* not an error but an order */
+#define WC_EXE_STOP 1 /* not an error but an order */
 #define WC_EXE_ERR_BAD_STATE -1
 #define WC_EXE_ERR_OUTOFMEMORY -2
 #define WC_EXE_ERR_SYSTEM -3
@@ -97,7 +97,9 @@ typedef struct {
 						uint64_t start, uint64_t end, cl_event *out_event);
 	wc_err_t (*on_device_range_done)(const wc_exec_t *wc, wc_cldev_t *dev,
 						uint32_t devindex, void *user, const wc_data_t *gdata,
-						uint64_t start, uint64_t end);
+						uint64_t start, uint64_t end, wc_data_t *results);
+	wc_err_t (*on_receive_range_results)(const wc_exec_t *wc, void *user,
+						uint64_t start, uint64_t end, const wc_data_t *results);
 	void (*free_global_data)(const wc_exec_t *wc, void *user,
 						wc_data_t *gdata);
 	void (*progress)(float percent, void *user);

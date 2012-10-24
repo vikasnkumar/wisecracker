@@ -67,7 +67,7 @@ struct wc_executor_details {
 	uint64_t *all_tasks4system; //array of num_systems for master
 	uint64_t my_task_range[2]; // my range of tasks
 	uint64_t *task_ranges; // range of tasks per system
-	int64_t refcount;
+	volatile int64_t refcount;
 	cl_event userevent;
 };
 
@@ -769,12 +769,14 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 								start, end, tasks_completed);
 						break;
 					}
-					wc->refcount++;
-					//Wait for events here
+					// Wait for events here
+					// if no events are returned then we don't care and will not
+					// wait for anything
 					if (events[idx]) {
 						rc = clSetEventCallback(events[idx], CL_COMPLETE,
 								wc_executor_device_event_notify, wc);
 						WC_ERROR_OPENCL_BREAK(clSetEventCallback, rc);
+						wc->refcount++;
 						rc = clEnqueueWaitForEvents(dev->cmdq, 1, &events[idx]);
 						WC_ERROR_OPENCL_BREAK(clEnqueueWaitForEvents, rc);
 					}
@@ -790,8 +792,11 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 				}
 				if (rc != WC_EXE_OK || rc < 0)
 					break;
-				rc = clWaitForEvents(1, &wc->userevent);
-				WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
+				// we have events to wait for
+				if (wc->refcount > 0) {
+					rc = clWaitForEvents(1, &wc->userevent);
+					WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
+				}
 				// gets here when event is set
 				rc |= clReleaseEvent(wc->userevent);
 				wc->userevent = (cl_event)0;
@@ -805,21 +810,43 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 				if (wc->cbs.on_device_range_done) {
 					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
-						wc_err_t err = wc->cbs.on_device_range_done(wc, dev,
+						wc_data_t results = { 0 };
+						wc_err_t errs = wc->cbs.on_device_range_done(wc, dev,
 								idx, wc->cbs.user, &wc->globaldata,
 								device_ranges[idx].s[0],
-								device_ranges[idx].s[1]);
-						//TODO: send data back to master
-						if (err == WC_EXE_ABORT) {
-							WC_INFO("User requested abort.\n");
-							rc = err;
+								device_ranges[idx].s[1],
+								&results);
+						//TODO: send data back to master and invoke the
+						//on-receive event
+						if (wc->cbs.on_receive_range_results) {
+							wc_err_t errm = wc->cbs.on_receive_range_results(wc,
+									wc->cbs.user, device_ranges[idx].s[0],
+									device_ranges[idx].s[1], &results);
+							//TODO: propagate this stop to slaves
+							if (errm == WC_EXE_STOP) {
+								WC_INFO("User requested a stop.\n");
+								rc = errm;
+								break;
+							}
+							if (errm != WC_EXE_OK) {
+								WC_ERROR("Error occurred in callback\n");
+								rc = WC_EXE_ERR_BAD_STATE;
+								break;
+							}
+						}
+						//TODO: propagate this stop to master
+						if (errs == WC_EXE_STOP) {
+							WC_INFO("User requested a stop.\n");
+							rc = errs;
 							break;
 						}
-						if (err != WC_EXE_OK) {
+						if (errs != WC_EXE_OK) {
 							WC_ERROR("Error occurred in callback\n");
 							rc = WC_EXE_ERR_BAD_STATE;
 							break;
 						}
+						// do this on both master and slave
+						WC_FREE(results.ptr);
 					}
 				}
 				// TODO: call progress only on master based on tasks completed
@@ -837,7 +864,7 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 		wc->state = WC_EXECSTATE_DEVICE_DONE_RUNNING;
 		WC_FREE(events);
 		WC_FREE(device_ranges);
-		if (rc != WC_EXE_OK && rc != WC_EXE_ABORT)
+		if (rc != WC_EXE_OK && rc != WC_EXE_STOP)
 			break;
 		// let's invoke the device finish functions
 		if (wc->cbs.on_device_finish) {
@@ -876,7 +903,16 @@ wc_err_t wc_executor_run(wc_exec_t *wc)
 		}
 		if (rc != WC_EXE_OK)
 			break;
-		rc = wc_executor_system_run(wc);
+		// run the slave method if single machine mode
+		if (wc->system_id == 0 && wc->num_systems <= 1) {
+			rc = wc_executor_system_run(wc);
+		} else {
+			if (wc->system_id == 0) {
+//				rc = wc_executor_master_system_run(wc);
+			} else {
+//				rc = wc_executor_system_run(wc);
+			}
+		}
 		if (rc != WC_EXE_OK) {
 			WC_WARN("error occurred during the run: %d\n", rc);
 		}

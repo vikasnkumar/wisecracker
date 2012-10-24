@@ -35,11 +35,7 @@ include(CheckLibraryExists)
 include(CheckTypeSize)
 include(CheckFunctionExists)
 option(USE_OPENSSL "Use OpenSSL" ON)
-if (APPLE OR WIN32)
-	option(USE_MPI "Use MPI" OFF)
-else (APPLE OR WIN32)
-	option(USE_MPI "Use MPI" ON)
-endif (APPLE OR WIN32)
+option(USE_MPI "Use MPI" ON)
 
 # Custom includes
 set(WC_SRCBIN_DIR ${CMAKE_CURRENT_BINARY_DIR}/src)

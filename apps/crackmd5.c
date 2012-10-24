@@ -70,6 +70,12 @@ struct wc_global_data {
 	cl_uint charset; // an integer copy of the charset
 };
 
+struct wc_results_data {
+	cl_uchar16 match;
+	uint64_t kernelcounter;
+	int system_id;
+};
+
 int wc_user_usage(const char *app)
 {
 	printf("\nUsage: %s [OPTIONS]\n", app);
@@ -532,7 +538,7 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 
 wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		uint32_t devindex, void *user, const wc_data_t *gdata,
-		uint64_t start, uint64_t end)
+		uint64_t start, uint64_t end, wc_data_t *results)
 {
 	struct wc_user *wcu = (struct wc_user *)user;
 	struct wc_per_device *wcd = NULL;
@@ -540,17 +546,39 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	if (!wcu->devices || devindex >= wcu->num_devices)
 		return WC_EXE_ERR_BAD_STATE;
+	// nullify result for those that do not match
+	if (results) {
+		results->ptr = NULL;
+		results->len = 0;
+	}
 	// check for matches
 	wcd = &wcu->devices[devindex];
 	if (wcd->match.s[0] != 0) {
 		int8_t l = 0;
+		struct wc_results_data *res = NULL;
 		WC_INFO("Found match in %"PRIu64"th kernel call: ", wcu->kernelcounter);
 		for (l = 0; l < wcd->nchars; ++l)
 			WC_NULL("%c", wcd->match.s[l]);
 		WC_NULL("\n");
-		wcu->found = 1;
-		memcpy(&wcu->match, &wcd->match, sizeof(wcd->match));
-		return WC_EXE_ABORT;
+//		wcu->found = 1;
+//		memcpy(&wcu->match, &wcd->match, sizeof(wcd->match));
+
+		res = WC_MALLOC(sizeof(*res));
+		if (res) {
+			memset(res, 0, sizeof(*res));
+			memcpy(&res->match, &wcd->match, sizeof(wcd->match));
+			res->kernelcounter = wcu->kernelcounter;
+			res->system_id = wc_executor_system_id(wc);
+			if (results) {
+				results->ptr = res;
+				results->len = sizeof(*res);
+			}
+		} else {
+			WC_ERROR_OUTOFMEMORY(sizeof(*res));
+			return WC_EXE_ERR_OUTOFMEMORY;
+		}
+		// we want to signal end of run over here across systems
+		return WC_EXE_STOP;
 	}
 	return WC_EXE_OK;
 }
@@ -581,6 +609,23 @@ wc_err_t crackmd5_on_device_finish(const wc_exec_t *wc, wc_cldev_t *dev,
 			WC_ERROR_OPENCL(clReleaseMemObject, rc);
 	}
 	return (rc == CL_SUCCESS) ? WC_EXE_OK : WC_EXE_ERR_OPENCL;
+}
+
+wc_err_t crackmd5_on_recv_results(const wc_exec_t *wc, void *user,
+					uint64_t start, uint64_t end, const wc_data_t *results)
+{
+	struct wc_user *wcu = (struct wc_user *)user;
+	if (!wc || !user || !results || (start > end))
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	if (results && results->ptr &&
+		results->len == sizeof(struct wc_results_data)) {
+		struct wc_results_data *res = (struct wc_results_data *)results->ptr;
+		wcu->found = 1;
+		memcpy(&wcu->match, &res->match, sizeof(res->match));
+		WC_INFO("Found match in %"PRIu64"th kernel call on system %d\n",
+				res->kernelcounter, res->system_id);
+	}
+	return WC_EXE_OK;
 }
 
 int main(int argc, char **argv)
@@ -623,6 +668,7 @@ int main(int argc, char **argv)
 		callbacks.on_device_finish = crackmd5_on_device_finish;
 		callbacks.on_device_range_exec = crackmd5_on_device_range_exec;
 		callbacks.on_device_range_done = crackmd5_on_device_range_done;
+		callbacks.on_receive_range_results = crackmd5_on_recv_results;
 		callbacks.free_global_data = crackmd5_free_global_data;
 		callbacks.progress = crackmd5_progress;
 

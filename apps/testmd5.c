@@ -424,14 +424,19 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 								uint32_t devindex, void *user,
 								const wc_data_t *gdata,
-								uint64_t start, uint64_t end)
+								uint64_t start, uint64_t end,
+								wc_data_t *results)
 {
 	cl_int rc = CL_SUCCESS;
 	struct wc_user *wcu = (struct wc_user *)user;
-	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
+	if (!wc || !dev || !wcu || !gdata || !gdata->ptr || !results)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	if (!wcu->devices || devindex >= wcu->num_devices || !wcu->input_len)
 		return WC_EXE_ERR_BAD_STATE;
+	if (results) {
+		results->ptr = NULL;
+		results->len = 0;
+	}
 	do {
 		uint32_t jdx;
 		const int maxblocksz = MAX_BLOCK_LEN;
