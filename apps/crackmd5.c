@@ -477,6 +477,9 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 	if (!wcu->devices || devindex >= wcu->num_devices ||
 			gdata->len < sizeof(*gd))
 		return WC_EXE_ERR_BAD_STATE;
+	if (start > end)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+
 	gd = (const struct wc_global_data *)gdata->ptr;
 	do {
 		const cl_uint workdim = 1;

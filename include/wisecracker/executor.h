@@ -86,7 +86,7 @@ typedef struct {
 	wc_err_t (*get_global_data)(const wc_exec_t *wc, void *user,
 						wc_data_t *out);
 	wc_err_t (*on_receive_global_data)(const wc_exec_t *wc, void *user,
-						wc_data_t *gdata);
+						const wc_data_t *gdata);
 
 	wc_err_t (*on_device_start)(const wc_exec_t *wc, wc_cldev_t *dev,
 						uint32_t devindex, void *user, const wc_data_t *gdata);

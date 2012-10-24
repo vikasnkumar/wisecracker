@@ -285,14 +285,18 @@ wc_err_t testmd5_get_global_data(const wc_exec_t *wc, void *user,
 	uint32_t ilen = 0;
 	cl_uint idx;
 	cl_uchar *input = NULL;
+	void *databuf = NULL;
 	if (!wcu || !out)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	// initialize the variables
 	ilen = maxblocksz * wcu->workitems;
-	input = WC_MALLOC(ilen);
-	if (!input)
+	databuf = WC_MALLOC(ilen + sizeof(wcu->workitems));
+	if (!databuf)
 		return WC_EXE_ERR_OUTOFMEMORY;
-	memset(input, 0, ilen);
+	memset(databuf, 0, ilen + sizeof(wcu->workitems));
+	memcpy(databuf, &(wcu->workitems), sizeof(wcu->workitems));
+	input = (cl_uchar *)databuf;
+	input += sizeof(wcu->workitems);
 	srand((int)time(NULL));
 	// randomly fill the buffers
 	for (idx = 0; idx < wcu->workitems ; ++idx) {
@@ -301,8 +305,21 @@ wc_err_t testmd5_get_global_data(const wc_exec_t *wc, void *user,
 			input[kdx + idx * maxblocksz] = (cl_uchar)(rand() & 0xFF);
 		}
 	}
-	out->ptr = input;
-	out->len = ilen;
+	out->ptr = databuf;
+	out->len = ilen + sizeof(wcu->workitems);
+	return WC_EXE_OK;
+}
+
+wc_err_t testmd5_on_receive_global_data(const wc_exec_t *wc, void *user,
+								const wc_data_t *gdata)
+{
+	struct wc_user *wcu = (struct wc_user *)user;
+	if (!wcu || !gdata || !gdata->ptr)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	if(gdata->len < sizeof(wcu->workitems))
+		return WC_EXE_ERR_INVALID_VALUE;
+	memcpy(&wcu->workitems, gdata->ptr, sizeof(wcu->workitems));
+	WC_DEBUG("Work items received: %u\n", wcu->workitems);
 	return WC_EXE_OK;
 }
 
@@ -321,23 +338,22 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 		cl_uint ilen;
 		cl_uint argc = 0;
 		cl_ulong localmem_per_kernel = 0;
-		cl_uint parallelsz = (cl_uint)wc_executor_num_tasks(wc);
 		struct wc_per_device *wcd = &wcu->devices[devindex];
 
-		ilen = maxblocksz * parallelsz;
+		ilen = maxblocksz * wcu->workitems; // same as earlier
 		memset(wcd, 0, sizeof(*wcd));
-		wcd->parallelsz = parallelsz;
+		wcd->parallelsz = wcu->workitems;
 		wcd->l_bufsz = ilen;
 		wcd->kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
 		wcd->input_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
-										gdata->len, NULL, &rc);
+										ilen, NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 		wcd->inputlen_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
 								sizeof(cl_uint) * wcu->workitems, NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 		wcd->digest_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
-									sizeof(cl_uchar16) * parallelsz, NULL, &rc);
+								sizeof(cl_uchar16) * wcu->workitems, NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 
 		rc = clGetKernelWorkGroupInfo(wcd->kernel, dev->id,
@@ -371,15 +387,23 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	if (!wcu->devices || devindex >= wcu->num_devices || !wcu->input_len)
 		return WC_EXE_ERR_BAD_STATE;
+	if (end < start)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+
 	do {
 		const cl_uint workdim = 1;
 		size_t local_work_size = 1;
 		size_t global_work_size = end - start;
 		size_t global_work_offset = start;
+		cl_uint iptrlen = 0;
 		struct wc_per_device *wcd = &wcu->devices[devindex];
+		const cl_uchar *input = (const cl_uchar *)gdata->ptr;
+		input += sizeof(wcu->workitems);
+		iptrlen = gdata->len - sizeof(wcu->workitems);
+
 		WC_DEBUG("Start: %"PRIu64" End: %"PRIu64"\n", start, end);
 		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->input_mem, CL_FALSE, 0,
-				gdata->len, gdata->ptr, 0, NULL, NULL);
+				iptrlen, input, 0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
 		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->inputlen_mem, CL_FALSE, 0,
 				sizeof(cl_uint) * wcu->workitems, wcu->input_len, 0, NULL, NULL);
@@ -487,6 +511,7 @@ int main(int argc, char **argv)
 		callbacks.get_num_tasks = testmd5_get_num_tasks;
 		callbacks.on_code_compile = testmd5_on_compile;
 		callbacks.get_global_data = testmd5_get_global_data;
+		callbacks.on_receive_global_data = testmd5_on_receive_global_data;
 		callbacks.on_device_start = testmd5_on_device_start;
 		callbacks.on_device_finish = testmd5_on_device_finish;
 		callbacks.on_device_range_exec = testmd5_on_device_range_exec;

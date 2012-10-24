@@ -458,7 +458,7 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 			rc = WC_EXE_ERR_OUTOFMEMORY;
 			break;
 		}
-		memset(wc->task_ranges, 0, sizeof(wc->task_ranges));
+		memset(wc->task_ranges, 0, wc->num_systems * sizeof(uint64_t) * 2);
 		sum_tasks = 0;
 		for (idx = 0; idx < wc->num_systems; ++idx)
 			sum_tasks += wc->all_tasks4system[idx];
@@ -487,7 +487,17 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 		wc->my_task_range[1] = wc->task_ranges[2 * wc->system_id + 1];
 		// ok now scatter the data across the slaves
 		if (wc->mpi_initialized) {
-			int err = wc_mpi_scatter(wc->task_ranges, 2,
+			int err;
+			err = wc_mpi_broadcast(&wc->num_tasks, 1, MPI_UNSIGNED_LONG_LONG,
+								wc->system_id);
+			if (err < 0) {
+				WC_ERROR("Unable to send num tasks to slaves. MPI Error: %d\n",
+						err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+			WC_DEBUG("Sent num tasks as %"PRIu64"\n", wc->num_tasks);
+			err = wc_mpi_scatter(wc->task_ranges, 2,
 						MPI_UNSIGNED_LONG_LONG, wc->my_task_range, 2,
 						MPI_UNSIGNED_LONG_LONG, wc->system_id);
 			if (err < 0) {
@@ -500,6 +510,8 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 			WC_WARN("MPI Not initialized. Not sending task ranges \n");
 		}
 		wc->state = WC_EXECSTATE_GOT_TASKRANGES;
+		WC_DEBUG("Task Range: (%"PRIu64", %"PRIu64")\n",
+					wc->my_task_range[0], wc->my_task_range[1]);
 	} while (0);
 	return rc;
 }
@@ -602,12 +614,22 @@ static wc_err_t wc_executor_slave_pre_run(wc_exec_t *wc)
 			rc = WC_EXE_ERR_OUTOFMEMORY;
 			break;
 		}
-		memset(wc->task_ranges, 0, sizeof(wc->task_ranges));
+		memset(wc->task_ranges, 0, wc->num_systems * sizeof(uint64_t) * 2);
 		wc->my_task_range[0] = 0;
 		wc->my_task_range[1] = 0;
 		// wait for getting task division from the master
 		if (wc->mpi_initialized) {
-			int err = wc_mpi_scatter(wc->task_ranges, 2,
+			int err;
+			err = wc_mpi_broadcast(&wc->num_tasks, 1, MPI_UNSIGNED_LONG_LONG,
+									0);
+			if (err < 0) {
+				WC_ERROR("Unable to get num tasks from master. MPI Error: %d\n",
+						err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+			WC_DEBUG("Received num tasks as %"PRIu64"\n", wc->num_tasks);
+			err = wc_mpi_scatter(wc->task_ranges, 2,
 						MPI_UNSIGNED_LONG_LONG, wc->my_task_range, 2,
 						MPI_UNSIGNED_LONG_LONG, 0);
 			if (err < 0) {
@@ -618,6 +640,8 @@ static wc_err_t wc_executor_slave_pre_run(wc_exec_t *wc)
 			}
 			wc->task_ranges[2 * wc->system_id] = wc->my_task_range[0];
 			wc->task_ranges[2 * wc->system_id + 1] = wc->my_task_range[1];
+			WC_DEBUG("Task Range: (%"PRIu64", %"PRIu64")\n",
+					wc->my_task_range[0], wc->my_task_range[1]);
 		} else {
 			WC_WARN("MPI Not initialized. Not receiving task ranges \n");
 		}
