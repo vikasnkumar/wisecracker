@@ -476,9 +476,11 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 					num_rounds;
 			wc->task_ranges[2 * idx] = start;
 			wc->task_ranges[2 * idx + 1] = end;
-			start = end;
-			if (end >= wc->num_tasks)
+			if (end >= wc->num_tasks) {
+				wc->task_ranges[2 * idx + 1] = wc->num_tasks - start;
 				break;
+			}
+			start = end;
 		}
 		wc->state = WC_EXECSTATE_DATA_DECOMPOSED;
 		wc->my_task_range[0] = wc->task_ranges[2 * wc->system_id];

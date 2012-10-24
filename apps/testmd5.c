@@ -377,6 +377,7 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		size_t global_work_size = end - start;
 		size_t global_work_offset = start;
 		struct wc_per_device *wcd = &wcu->devices[devindex];
+		WC_DEBUG("Start: %"PRIu64" End: %"PRIu64"\n", start, end);
 		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->input_mem, CL_FALSE, 0,
 				gdata->len, gdata->ptr, 0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
@@ -466,10 +467,10 @@ int main(int argc, char **argv)
 	do {
 		struct timeval tv1, tv2;
 		wc_util_timeofday(&tv1);
+		memset(&user, 0, sizeof(user));
 		// if we are the main application, then we parse the arguments
 		if (wc_executor_system_id(wc) == 0) {
 			// parse actual commandline arguments
-			memset(&user, 0, sizeof(user));
 			if (wc_user_parse(argc, argv, &user) < 0) {
 				WC_ERROR("Unable to parse arguments.\n");
 				return -1;
