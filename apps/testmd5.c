@@ -434,8 +434,9 @@ wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		return WC_EXE_ERR_BAD_STATE;
 	do {
 		uint32_t jdx;
-		const cl_uchar *input = (cl_uchar *)gdata->ptr;
 		const int maxblocksz = MAX_BLOCK_LEN;
+		const cl_uchar *input = (const cl_uchar *)gdata->ptr;
+		input += sizeof(wcu->workitems);
 		for (jdx = 0; jdx < wcu->workitems; ++jdx) {
 			cl_uchar md[MD5_DIGEST_LENGTH];
 			memset(md, 0, sizeof(md));
