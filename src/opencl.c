@@ -661,3 +661,92 @@ cl_uint wc_opencl_min_device_address_bits(const wc_opencl_t *ocl)
 	}
 	return addrbits;
 }
+
+int wc_opencl_event_set(cl_event ev)
+{
+	cl_int rc = CL_SUCCESS;
+	if (!ev)
+		return -1;
+	rc = clSetUserEventStatus(ev, CL_COMPLETE);
+	if (rc != CL_SUCCESS) {
+		WC_ERROR_OPENCL(clSetUserEventStatus, rc);
+		return -1;
+	}
+	return 0;
+}
+
+cl_event wc_opencl_event_create(wc_opencl_t *ocl)
+{
+	cl_event ev = (cl_event)0;
+	if (wc_opencl_is_usable(ocl)) {
+		cl_uint idx;
+		for (idx = 0; idx < ocl->device_max; ++idx) {
+			cl_int rc = CL_SUCCESS;
+			if (ocl->devices[idx].context) {
+				ev = clCreateUserEvent(ocl->devices[idx].context, &rc);
+				if (rc != CL_SUCCESS) {
+					WC_ERROR_OPENCL(clCreateUserEvent, rc);
+					// try again
+				} else {
+					break;
+				}
+			}
+		}
+	}
+	return ev;
+}
+
+int wc_opencl_event_enqueue_wait(wc_cldev_t *dev, cl_event *evptr,
+		cl_uint evcount, wc_opencl_event_cb_t evcb, void *cbarg)
+{
+	cl_int rc = CL_SUCCESS;
+	do {
+		if (!dev || !evptr || evcount <= 0)
+			return -1;
+		if (evcb) {
+			cl_uint idx;
+			for (idx = 0; idx < evcount; ++idx) {
+				if (!evptr[idx])
+					continue;
+				rc = clSetEventCallback(evptr[idx], CL_COMPLETE, evcb, cbarg);
+				WC_ERROR_OPENCL_BREAK(clSetEventCallback, rc);
+			}
+			if (rc != CL_SUCCESS)
+				break;
+		}
+		rc = clEnqueueWaitForEvents(dev->cmdq, evcount, evptr);
+		WC_ERROR_OPENCL_BREAK(clEnqueueWaitForEvents, rc);
+	} while (0);
+	return (rc == CL_SUCCESS) ? 0 : -1;
+}
+
+int wc_opencl_event_wait(cl_event *evptr, cl_uint evcount)
+{
+	if (evptr && evcount > 0) {
+		cl_int rc = clWaitForEvents(evcount, evptr);
+		if (rc == CL_SUCCESS)
+			return 0;
+		WC_ERROR_OPENCL(clWaitForEvents, rc);
+	}
+	return -1;
+}
+
+int wc_opencl_flush_cmdq(wc_cldev_t *dev)
+{
+	if (dev) {
+		cl_int rc = clFlush(dev->cmdq);
+		if (rc == CL_SUCCESS)
+			return 0;
+		WC_ERROR_OPENCL(clFlush, rc);
+	}
+	return -1;
+}
+
+void wc_opencl_event_release(cl_event ev)
+{
+	if (ev) {
+		cl_int rc = clReleaseEvent(ev);
+		if (rc != CL_SUCCESS)
+			WC_ERROR_OPENCL(clReleaseEvent, rc);
+	}
+}

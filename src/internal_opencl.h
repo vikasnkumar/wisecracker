@@ -50,18 +50,33 @@ typedef struct {
 } wc_opencl_t;
 
 int wc_opencl_init(wc_devtype_t devt, uint32_t max_devices,
-					wc_opencl_t *rt, uint8_t allow_outoforder);
+					wc_opencl_t *ocl, uint8_t allow_outoforder);
 
-void wc_opencl_finalize(wc_opencl_t *rt);
+void wc_opencl_finalize(wc_opencl_t *ocl);
 
-void wc_opencl_dump(const wc_opencl_t *rt);
+void wc_opencl_dump(const wc_opencl_t *ocl);
 
-int wc_opencl_program_load(wc_opencl_t *wc, const char *src, size_t len,
+int wc_opencl_program_load(wc_opencl_t *ocl, const char *src, size_t len,
 							const char *buildopts);
 
-uint8_t wc_opencl_is_usable(const wc_opencl_t *wc);
+uint8_t wc_opencl_is_usable(const wc_opencl_t *ocl);
 	
-cl_uint wc_opencl_min_device_address_bits(const wc_opencl_t *wc);
+cl_uint wc_opencl_min_device_address_bits(const wc_opencl_t *ocl);
+
+int wc_opencl_flush_cmdq(wc_cldev_t *dev);
+
+int wc_opencl_event_set(cl_event ev);
+
+cl_event wc_opencl_event_create(wc_opencl_t *ocl);
+
+typedef void (CL_CALLBACK * wc_opencl_event_cb_t)(cl_event, cl_int, void *);
+
+int wc_opencl_event_enqueue_wait(wc_cldev_t *dev, cl_event *evptr,
+					cl_uint evcount, wc_opencl_event_cb_t evcb, void *cbarg);
+
+int wc_opencl_event_wait(cl_event *evptr, cl_uint evcount);
+
+void wc_opencl_event_release(cl_event);
 
 EXTERN_C_END
 

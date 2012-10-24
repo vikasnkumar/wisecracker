@@ -655,7 +655,6 @@ static wc_err_t wc_executor_slave_pre_run(wc_exec_t *wc)
 
 void CL_CALLBACK wc_executor_device_event_notify(cl_event ev, cl_int status, void *user)
 {
-	cl_int rc = CL_SUCCESS;
 	wc_exec_t *wc = (wc_exec_t *)user;
 	if (!wc || !wc->userevent)
 		return;
@@ -665,13 +664,11 @@ void CL_CALLBACK wc_executor_device_event_notify(cl_event ev, cl_int status, voi
 	// the reference count has hit 0
 	if (wc->refcount == 0) {
 		// WC_DEBUG("setting the user event\n");
-		rc = clSetUserEventStatus(wc->userevent, CL_COMPLETE);
-		if (rc != CL_SUCCESS)
-			WC_ERROR_OPENCL(clSetUserEventStatus, rc);
+		wc_opencl_event_set(wc->userevent);
 	}
 }
 
-wc_err_t wc_executor_system_run(wc_exec_t *wc)
+wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
@@ -729,22 +726,10 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 				rc = WC_EXE_OK;
 				wc->refcount = 0;
 				wc->userevent = (cl_event)0;
-				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-					if (wc->ocl.devices[idx].context) {
-						wc->userevent =
-							clCreateUserEvent(wc->ocl.devices[idx].context,
-									&rc);
-						if (rc != CL_SUCCESS) {
-							WC_ERROR_OPENCL(clRetainEvent, rc);
-							// try again
-						} else {
-							break;
-						}
-					}
-				}
+				wc->userevent = wc_opencl_event_create(&wc->ocl);
 				if (!wc->userevent) {
 					rc = WC_EXE_ERR_OPENCL;
-					WC_WARN("User event failed to set. Shaky state\n");
+					WC_WARN("User event failed to create. Shaky state\n");
 					break;
 				}
 				start = wc->my_task_range[0];
@@ -773,16 +758,19 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 					// if no events are returned then we don't care and will not
 					// wait for anything
 					if (events[idx]) {
-						rc = clSetEventCallback(events[idx], CL_COMPLETE,
-								wc_executor_device_event_notify, wc);
-						WC_ERROR_OPENCL_BREAK(clSetEventCallback, rc);
+						if (wc_opencl_event_enqueue_wait(dev, &events[idx], 1,
+									wc_executor_device_event_notify, wc) < 0) {
+							rc = WC_EXE_ERR_OPENCL;
+							WC_ERROR("Unable to set wait for event\n");
+							break;
+						}
 						wc->refcount++;
-						rc = clEnqueueWaitForEvents(dev->cmdq, 1, &events[idx]);
-						WC_ERROR_OPENCL_BREAK(clEnqueueWaitForEvents, rc);
 					}
 					// flush the command queue for the device
-					rc = clFlush(dev->cmdq);
-					WC_ERROR_OPENCL_BREAK(clFlush, rc);
+					if (wc_opencl_flush_cmdq(dev) < 0) {
+						rc = WC_EXE_ERR_OPENCL;
+						break;
+					}
 					tasks_completed += end - start;
 					start = end;
 					if (start >= wc->my_task_range[1])
@@ -794,15 +782,18 @@ wc_err_t wc_executor_system_run(wc_exec_t *wc)
 					break;
 				// we have events to wait for
 				if (wc->refcount > 0) {
-					rc = clWaitForEvents(1, &wc->userevent);
-					WC_ERROR_OPENCL_BREAK(clWaitForEvents, rc);
+					rc = wc_opencl_event_wait(&wc->userevent, 1);
+					if (rc < 0) {
+						rc = WC_EXE_ERR_OPENCL;
+						break;
+					}
 				}
 				// gets here when event is set
-				rc |= clReleaseEvent(wc->userevent);
+				wc_opencl_event_release(wc->userevent);
 				wc->userevent = (cl_event)0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 					if (events[idx])
-						rc |= clReleaseEvent(events[idx]);
+						wc_opencl_event_release(events[idx]);
 					events[idx] = (cl_event)0;
 				}
 				//FIXME; should we call this on demand @ every event callback or
@@ -905,12 +896,12 @@ wc_err_t wc_executor_run(wc_exec_t *wc)
 			break;
 		// run the slave method if single machine mode
 		if (wc->system_id == 0 && wc->num_systems <= 1) {
-			rc = wc_executor_system_run(wc);
+			rc = wc_executor_single_system_run(wc);
 		} else {
 			if (wc->system_id == 0) {
 //				rc = wc_executor_master_system_run(wc);
 			} else {
-//				rc = wc_executor_system_run(wc);
+//				rc = wc_executor_slave_system_run(wc);
 			}
 		}
 		if (rc != WC_EXE_OK) {
