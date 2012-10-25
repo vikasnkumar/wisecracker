@@ -104,9 +104,9 @@ int wc_mpi_scatter(void *sendbuf, int scount, void *sendtype, void *recvbuf,
 	return -1;
 }
 
-int wc_mpi_iprobe(int src_id, int tag, int *flag)
+int wc_mpi_iprobe(int src_id, int tag, int *flag, wc_mpistatus_t *status)
 {
-	int rc = MPI_Iprobe(src_id, tag, MPI_COMM_WORLD, flag, MPI_STATUS_IGNORE);
+	int rc = MPI_Iprobe(src_id, tag, MPI_COMM_WORLD, flag, status);
 	WC_HANDLE_MPI_ERROR(MPI_Iprobe, rc);
 	return (rc == MPI_SUCCESS) ? 0 : -1;
 }
@@ -146,6 +146,17 @@ int wc_mpi_isend(void *buffer, int count, void *datatype, int dest_id, int tag,
 	return -1;
 }
 
+int wc_mpi_send(void *buffer, int count, void *datatype, int dest_id, int tag)
+{
+	if (buffer) {
+		int rc = MPI_Send(buffer, count, datatype, dest_id, tag,
+							MPI_COMM_WORLD);
+		WC_HANDLE_MPI_ERROR(MPI_Send, rc);
+		return (rc == MPI_SUCCESS) ? 0 : -1;
+	}
+	return -1;
+}
+
 int wc_mpi_test(wc_mpirequest_t *req, int *flag)
 {
 	int rc = MPI_Test(req, flag, MPI_STATUS_IGNORE);
@@ -153,11 +164,28 @@ int wc_mpi_test(wc_mpirequest_t *req, int *flag)
 	return (rc == MPI_SUCCESS) ? 0 : -1;
 }
 
-int wc_mpi_wait(size_t count, wc_mpirequest_t *reqarray)
+int wc_mpi_waitall(size_t count, wc_mpirequest_t *reqarray)
 {
 	int rc = MPI_Waitall(count, reqarray, MPI_STATUSES_IGNORE);
 	WC_HANDLE_MPI_ERROR(MPI_Waitall, rc);
 	return (rc == MPI_SUCCESS) ? 0 : -1;
+}
+
+int wc_mpi_waitany(size_t count, wc_mpirequest_t *reqarray, int *index)
+{
+	int rc = MPI_Waitany(count, reqarray, index, MPI_STATUSES_IGNORE);
+	WC_HANDLE_MPI_ERROR(MPI_Waitany, rc);
+	return (rc == MPI_SUCCESS) ? 0 : -1;
+}
+
+int wc_mpi_get_count(wc_mpistatus_t *status, void *datatype, int *count)
+{
+	if (status && count) {
+		int rc = MPI_Get_count(status, datatype, count);
+		WC_HANDLE_MPI_ERROR(MPI_Get_count, rc);
+		return (rc == MPI_SUCCESS) ? 0 : -1;
+	}
+	return -1;
 }
 
 #else
@@ -203,10 +231,15 @@ int wc_mpi_scatter(void *sendbuf, int scount, void *sendtype, void *recvbuf,
 	return 0;
 }
 
-int wc_mpi_iprobe(int src_id, int tag, int *flag)
+int wc_mpi_iprobe(int src_id, int tag, int *flag, wc_mpistatus_t *status)
 {
 	if (flag)
 		flag = 0;
+	if (status) {
+		status.MPI_SOURCE = 0;
+		status.MPI_TAG = tag;
+		status.MPI_ERROR = 0;
+	}
 	return 0;
 }
 
@@ -227,6 +260,11 @@ int wc_mpi_isend(void *buffer, int count, void *datatype, int dest_id, int tag,
 	return 0;
 }
 
+int wc_mpi_send(void *buffer, int count, void *datatype, int dest_id, int tag)
+{
+	return 0;
+}
+
 int wc_mpi_test(wc_mpirequest_t *req, int *flag)
 {
 	if (flag)
@@ -234,8 +272,22 @@ int wc_mpi_test(wc_mpirequest_t *req, int *flag)
 	return 0;
 }
 
-int wc_mpi_wait(size_t count, wc_mpirequest_t *reqarray)
+int wc_mpi_waitall(size_t count, wc_mpirequest_t *reqarray)
 {
+	return 0;
+}
+
+int wc_mpi_waitany(size_t count, wc_mpirequest_t *reqarray, int *index)
+{
+	if (index)
+		index = 0;
+	return 0;
+}
+
+int wc_mpi_get_count(wc_mpistatus_t *status, void *datatype, int *count)
+{
+	if (count)
+		count = 0;
 	return 0;
 }
 
