@@ -734,11 +734,11 @@ static wc_err_t wc_executor_device_finish(wc_exec_t *wc)
 static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
+	cl_event *events = NULL;
+	cl_ulong2 *device_ranges = NULL;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
-		cl_event *events = NULL;
-		cl_ulong2 *device_ranges = NULL;
 		rc = wc_executor_device_start(wc);
 		if (rc != WC_EXE_OK)
 			break;
@@ -847,36 +847,36 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
 						wc_data_t results = { 0 };
-						wc_err_t errs = wc->cbs.on_device_range_done(wc, dev,
+						wc_err_t slverr = wc->cbs.on_device_range_done(wc, dev,
 								idx, wc->cbs.user, &wc->globaldata,
 								device_ranges[idx].s[0],
 								device_ranges[idx].s[1],
 								&results);
-						//TODO: send data back to master and invoke the
+						//send data back to master and invoke the
 						//on-receive event
 						if (wc->cbs.on_receive_range_results) {
-							wc_err_t errm = wc->cbs.on_receive_range_results(wc,
+							wc_err_t msterr = wc->cbs.on_receive_range_results(wc,
 									wc->cbs.user, device_ranges[idx].s[0],
 									device_ranges[idx].s[1], &results);
-							//TODO: propagate this stop to slaves
-							if (errm == WC_EXE_STOP) {
+							//propagate this stop to slaves
+							if (msterr == WC_EXE_STOP) {
 								WC_INFO("User requested a stop.\n");
-								rc = errm;
+								rc = msterr;
 								break;
 							}
-							if (errm != WC_EXE_OK) {
+							if (msterr != WC_EXE_OK) {
 								WC_ERROR("Error occurred in callback\n");
 								rc = WC_EXE_ERR_BAD_STATE;
 								break;
 							}
 						}
-						//TODO: propagate this stop to master
-						if (errs == WC_EXE_STOP) {
+						//propagate this stop to master
+						if (slverr == WC_EXE_STOP) {
 							WC_INFO("User requested a stop.\n");
-							rc = errs;
+							rc = slverr;
 							break;
 						}
-						if (errs != WC_EXE_OK) {
+						if (slverr != WC_EXE_OK) {
 							WC_ERROR("Error occurred in callback\n");
 							rc = WC_EXE_ERR_BAD_STATE;
 							break;
@@ -885,7 +885,7 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 						WC_FREE(results.ptr);
 					}
 				}
-				// TODO: call progress only on master based on tasks completed
+				// call progress only on master based on tasks completed
 				if (wc->cbs.progress) {
 					double percent = ((double)(100.0 * tasks_completed)) /
 															num_tasks;
@@ -898,18 +898,30 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 				break;
 		} while (0);
 		wc->state = WC_EXECSTATE_DEVICE_DONE_RUNNING;
-		WC_FREE(events);
-		WC_FREE(device_ranges);
 		if (rc != WC_EXE_OK && rc != WC_EXE_STOP)
 			break;
 		rc = wc_executor_device_finish(wc);
 		if (rc != WC_EXE_OK)
 			break;
 	} while (0);
+	WC_FREE(events);
+	WC_FREE(device_ranges);
 	return rc;
 }
 
 static int wc_loop_breaker = 0;
+struct wc_exec_result {
+	uint64_t start;
+	uint64_t end;
+	wc_data_t result;
+	wc_err_t err;
+};
+#define WC_TAG_MST_STOP 0x0000FACE
+#define WC_TAG_SLV_ERRORS 0x0000DEAD
+#define WC_TAG_SLV_RANGES 0x0000CAFE
+#define WC_TAG_SLV_RESULTS 0x0000BEEF
+#define WC_MAX_SLV_REQUESTS 3
+
 // we want to split the master_run into 2 functions
 WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 {
@@ -920,35 +932,154 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 	}
 	wc_loop_breaker = 0;
 	while (!wc_loop_breaker) {
+					/*
+						//TODO: send data back to master and invoke the
+						//on-receive event
+						if (wc->cbs.on_receive_range_results) {
+							wc_err_t msterr = wc->cbs.on_receive_range_results(wc,
+									wc->cbs.user, device_ranges[idx].s[0],
+									device_ranges[idx].s[1], &results);
+							//TODO: propagate this stop to slaves
+							if (msterr == WC_EXE_STOP) {
+								WC_INFO("User requested a stop.\n");
+								rc = msterr;
+								break;
+							}
+							if (msterr != WC_EXE_OK) {
+								WC_ERROR("Error occurred in callback\n");
+								rc = WC_EXE_ERR_BAD_STATE;
+								break;
+							}
+						}
+						//TODO: propagate this stop to master
+						if (slverr == WC_EXE_STOP) {
+							WC_INFO("User requested a stop.\n");
+							rc = slverr;
+							break;
+						}
+						if (slverr != WC_EXE_OK) {
+							WC_ERROR("Error occurred in callback\n");
+							rc = WC_EXE_ERR_BAD_STATE;
+							break;
+						}
+						// do this on both master and slave
+						WC_FREE(results.ptr);
+				// TODO: call progress only on master based on tasks completed
+				if (wc->cbs.progress) {
+					double percent = ((double)(100.0 * tasks_completed)) /
+															num_tasks;
+					wc->cbs.progress((float)percent, wc->cbs.user);
+				}
+					*/
 	}
 	return (WC_THREAD_RETURN)0;
 }
 
+static wc_err_t wc_executor_serialize(const wc_data_t *data, size_t count,
+									  wc_data_t *out)
+{
+	size_t sendcount = 0;
+	unsigned char *sendbuf = NULL;
+	wc_err_t rc = WC_EXE_OK;
+	do {
+		unsigned char *ptr;
+		size_t idx;
+		if (!data || count == 0 || !out) {
+			rc = WC_EXE_ERR_INVALID_PARAMETER;
+			break;
+		}
+		sendcount = 0;
+		for (idx = 0; idx < count; ++idx) {
+			sendcount += data[idx].len;
+			sendcount += sizeof(data[idx].len);
+		}
+		sendbuf = WC_MALLOC(sendcount);
+		if (!sendbuf) {
+			WC_ERROR_OUTOFMEMORY(sendcount);
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(sendbuf, 0, sendcount);
+		ptr = sendbuf;
+		for (idx = 0; idx < count; ++idx) {
+			memcpy(ptr, &data[idx].len, sizeof(data[idx].len));
+			ptr += sizeof(data[idx].len);
+			if (data[idx].ptr && data[idx].len > 0) {
+				memcpy(ptr, data[idx].ptr, data[idx].len);
+				ptr += data[idx].len;
+			}
+		}
+	} while (0);
+	if (out) {
+		out->ptr = sendbuf;
+		out->len = sendcount;
+	}
+	return rc;
+}
+
+static wc_err_t wc_executor_slave_check_stop()
+{
+	int flag = 0;
+	// check for message from master here and break if needed
+	if (wc_mpi_iprobe(0, WC_TAG_MST_STOP, &flag) < 0) {
+		WC_ERROR("Unable to probe for master's messages\n");
+		return WC_EXE_ERR_MPI;
+	}
+	// receive the message from master
+	if (flag == 1) {
+		wc_err_t msterr = WC_EXE_OK;
+		if (wc_mpi_recv(&msterr, 1, MPI_INT, 0, WC_TAG_MST_STOP) < 0) {
+			WC_ERROR("Unable to receive a stop from the master\n");
+			return WC_EXE_ERR_MPI;
+		}
+		if (msterr != WC_EXE_STOP) {
+			WC_WARN("Received %d from master instead of stop\n",
+					msterr);
+		} else {
+			WC_INFO("Received stop from master\n");
+		}
+		return WC_EXE_STOP;
+	}
+	return WC_EXE_OK;
+}
+
 static wc_err_t wc_executor_slave_system_run(wc_exec_t *wc)
 {
+#undef LOCAL_MALLOC_DEVICE_ARRAY
+#define LOCAL_MALLOC_DEVICE_ARRAY(PTR,TYPE,MUL) \
+do { \
+	(PTR) = WC_MALLOC(sizeof(TYPE) * wc->ocl.device_max * (MUL)); \
+	if ((PTR) == NULL) { \
+		WC_ERROR_OUTOFMEMORY(sizeof(TYPE) * wc->ocl.device_max * (MUL)); \
+		rc = WC_EXE_ERR_OUTOFMEMORY; \
+		break; \
+	} \
+	memset((PTR), 0, sizeof(TYPE) * wc->ocl.device_max * (MUL)); \
+	rc = WC_EXE_OK; \
+} while (0)
 	wc_err_t rc = WC_EXE_OK;
+	cl_event *device_events = NULL;
+	uint64_t *device_ranges = NULL;
+	wc_err_t *device_errs = NULL;
+	wc_data_t *device_results = NULL;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
-		cl_event *events = NULL;
-		cl_ulong2 *device_ranges = NULL;
+		LOCAL_MALLOC_DEVICE_ARRAY(device_events, cl_event, 1);
+		if (rc != WC_EXE_OK)
+			break;
+		LOCAL_MALLOC_DEVICE_ARRAY(device_ranges, uint64_t, 2);
+		if (rc != WC_EXE_OK)
+			break;
+		LOCAL_MALLOC_DEVICE_ARRAY(device_errs, wc_err_t, 1);
+		if (rc != WC_EXE_OK)
+			break;
+		LOCAL_MALLOC_DEVICE_ARRAY(device_results, wc_data_t, 1);
+		if (rc != WC_EXE_OK)
+			break;
 		rc = wc_executor_device_start(wc);
 		if (rc != WC_EXE_OK)
 			break;
-		events = WC_MALLOC(sizeof(cl_event) * wc->ocl.device_max);
-		if (!events) {
-			WC_ERROR_OUTOFMEMORY(sizeof(cl_event) * wc->ocl.device_max);
-			rc = WC_EXE_ERR_OUTOFMEMORY;
-			break;
-		}
-		memset(events, 0, sizeof(cl_event) * wc->ocl.device_max);
-		device_ranges = WC_MALLOC(sizeof(cl_ulong2) * wc->ocl.device_max);
-		if (!device_ranges) {
-			WC_ERROR_OUTOFMEMORY(sizeof(cl_ulong2) * wc->ocl.device_max);
-			rc = WC_EXE_ERR_OUTOFMEMORY;
-			break;
-		}
-		memset(device_ranges, 0, sizeof(cl_ulong2) * wc->ocl.device_max);
 		// we need to do the main stuff here for the current system
 		do {
 			uint64_t tasks_completed = 0;
@@ -975,17 +1106,17 @@ static wc_err_t wc_executor_slave_system_run(wc_exec_t *wc)
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 					uint64_t tasks4device;
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
-					events[idx] = (cl_event)0;
+					device_events[idx] = (cl_event)0;
 					tasks4device = dev->workgroup_sz * dev->compute_units *
 									wc->task_range_multiplier;
 					end = start + tasks4device;
 					if (end >= wc->my_task_range[1])
 						end = wc->my_task_range[1];
-					device_ranges[idx].s[0] = start;
-					device_ranges[idx].s[1] = end;
+					device_ranges[2 * idx] = start;
+					device_ranges[2 * idx + 1] = end;
 					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
 							wc->cbs.user, &wc->globaldata, start, end,
-							&events[idx]);
+							&device_events[idx]);
 					if (rc != WC_EXE_OK) {
 						WC_ERROR("Error occurred while running device work:"
 								" Range(%"PRIu64",%"PRIu64"). Completed(%"PRIu64")\n",
@@ -995,9 +1126,10 @@ static wc_err_t wc_executor_slave_system_run(wc_exec_t *wc)
 					// Wait for events here
 					// if no events are returned then we don't care and will not
 					// wait for anything
-					if (events[idx]) {
-						if (wc_opencl_event_enqueue_wait(dev, &events[idx], 1,
-									wc_executor_device_event_notify, wc) < 0) {
+					if (device_events[idx]) {
+						if (wc_opencl_event_enqueue_wait(dev,
+								&device_events[idx], 1,
+								wc_executor_device_event_notify, wc) < 0) {
 							rc = WC_EXE_ERR_OPENCL;
 							WC_ERROR("Unable to set wait for event\n");
 							break;
@@ -1030,60 +1162,70 @@ static wc_err_t wc_executor_slave_system_run(wc_exec_t *wc)
 				wc_opencl_event_release(wc->userevent);
 				wc->userevent = (cl_event)0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-					if (events[idx])
-						wc_opencl_event_release(events[idx]);
-					events[idx] = (cl_event)0;
+					if (device_events[idx])
+						wc_opencl_event_release(device_events[idx]);
+					device_events[idx] = (cl_event)0;
 				}
-				//FIXME; should we call this on demand @ every event callback or
-				//wait for the collection of events to complete first ?
+				// we wait for the collection of events to finish first before
+				// invoking this for every range
 				if (wc->cbs.on_device_range_done) {
+					wc_data_t senddata = { 0 };
+					// minimum is 3. we just use this here
+					wc_mpirequest_t requests[WC_MAX_SLV_REQUESTS];
+					memset(requests, 0, sizeof(requests));
 					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
-						wc_data_t results = { 0 };
-						wc_err_t errs = wc->cbs.on_device_range_done(wc, dev,
-								idx, wc->cbs.user, &wc->globaldata,
-								device_ranges[idx].s[0],
-								device_ranges[idx].s[1],
-								&results);
-						//TODO: send data back to master and invoke the
-						//on-receive event
-						if (wc->cbs.on_receive_range_results) {
-							wc_err_t errm = wc->cbs.on_receive_range_results(wc,
-									wc->cbs.user, device_ranges[idx].s[0],
-									device_ranges[idx].s[1], &results);
-							//TODO: propagate this stop to slaves
-							if (errm == WC_EXE_STOP) {
-								WC_INFO("User requested a stop.\n");
-								rc = errm;
-								break;
-							}
-							if (errm != WC_EXE_OK) {
-								WC_ERROR("Error occurred in callback\n");
-								rc = WC_EXE_ERR_BAD_STATE;
-								break;
-							}
-						}
-						//TODO: propagate this stop to master
-						if (errs == WC_EXE_STOP) {
-							WC_INFO("User requested a stop.\n");
-							rc = errs;
-							break;
-						}
-						if (errs != WC_EXE_OK) {
-							WC_ERROR("Error occurred in callback\n");
-							rc = WC_EXE_ERR_BAD_STATE;
-							break;
-						}
-						// do this on both master and slave
-						WC_FREE(results.ptr);
+						device_results[idx].ptr = NULL;
+						device_results[idx].len = 0;
+						device_errs[idx] = wc->cbs.on_device_range_done(wc, dev,
+							idx, wc->cbs.user, &wc->globaldata,
+							device_ranges[2 * idx], device_ranges[2 * idx + 1],
+							&device_results[idx]);
 					}
+					// send the errors from this range
+					if (wc_mpi_isend(device_errs, wc->ocl.device_max, MPI_INT,
+							0, WC_TAG_SLV_ERRORS, &requests[0]) < 0) {
+						WC_ERROR("Error in sending device error codes\n");
+						rc = WC_EXE_ERR_MPI;
+						break;
+					}
+					// send the device range itself
+					if (wc_mpi_isend(device_ranges, wc->ocl.device_max * 2,
+							MPI_UNSIGNED_LONG_LONG, 0, WC_TAG_SLV_RANGES,
+						   &requests[1]) < 0) {
+						WC_ERROR("Error in sending device ranges\n");
+						rc = WC_EXE_ERR_MPI;
+						break;
+					}
+					// first serialize the data into 1 buffer
+					// as opposed to using multiple buffers of varying lengths
+					rc = wc_executor_serialize(device_results,
+							wc->ocl.device_max, &senddata);
+					if (rc != WC_EXE_OK)
+						break;
+					// free the individual results buffers first
+					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+						WC_FREE(device_results[idx].ptr);
+					}
+					// send the results for this range
+					if (wc_mpi_isend(senddata.ptr, senddata.len, MPI_BYTE, 0,
+								WC_TAG_SLV_RESULTS, &requests[2]) < 0) {
+						WC_ERROR("Error in sending device results\n");
+						rc = WC_EXE_ERR_MPI;
+						break;
+					}
+					// wait for all the events to complete before moving on
+					if (wc_mpi_wait(WC_MAX_SLV_REQUESTS, requests) < 0) {
+						WC_ERROR("Error in waiting for all send events\n");
+						rc = WC_EXE_ERR_MPI;
+					}
+					// free the results send buffer and then break;
+					WC_FREE(senddata.ptr);
+					if (rc != WC_EXE_OK)
+						break;
 				}
-				// TODO: call progress only on master based on tasks completed
-				if (wc->cbs.progress) {
-					double percent = ((double)(100.0 * tasks_completed)) /
-															num_tasks;
-					wc->cbs.progress((float)percent, wc->cbs.user);
-				}
+				// check for message from master before looping
+				rc = wc_executor_slave_check_stop();
 				if (rc != WC_EXE_OK)
 					break;
 			} while (tasks_completed < num_tasks);
@@ -1091,15 +1233,18 @@ static wc_err_t wc_executor_slave_system_run(wc_exec_t *wc)
 				break;
 		} while (0);
 		wc->state = WC_EXECSTATE_DEVICE_DONE_RUNNING;
-		WC_FREE(events);
-		WC_FREE(device_ranges);
 		if (rc != WC_EXE_OK && rc != WC_EXE_STOP)
 			break;
 		rc = wc_executor_device_finish(wc);
 		if (rc != WC_EXE_OK)
 			break;
 	} while (0);
+	WC_FREE(device_events);
+	WC_FREE(device_ranges);
+	WC_FREE(device_errs);
+	WC_FREE(device_results);
 	return rc;
+#undef LOCAL_MALLOC_DEVICE_ARRAY
 }
 
 static wc_err_t wc_executor_master_system_run(wc_exec_t *wc)
