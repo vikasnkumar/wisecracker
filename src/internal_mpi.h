@@ -94,9 +94,9 @@ int wc_mpi_send(void *buffer, int count, void *datatype, int dest_id, int tag);
 
 int wc_mpi_test(wc_mpirequest_t *req, int *flag);
 
-int wc_mpi_waitall(size_t count, wc_mpirequest_t *reqarray);
+int wc_mpi_waitall(int count, wc_mpirequest_t *reqarray);
 
-int wc_mpi_waitany(size_t count, wc_mpirequest_t *reqarray, int *index);
+int wc_mpi_waitany(int count, wc_mpirequest_t *reqarray, int *index);
 
 int wc_mpi_get_count(wc_mpistatus_t *status, void *datatype, int *count);
 

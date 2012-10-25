@@ -40,6 +40,8 @@ int wc_mpi_init(int *argc, char ***argv)
 {
 	int rc = MPI_Init(argc, argv);
 	WC_HANDLE_MPI_ERROR(MPI_Init, rc);
+	if (rc == MPI_SUCCESS)
+		rc |= MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
 	return rc;
 }
 
@@ -164,14 +166,14 @@ int wc_mpi_test(wc_mpirequest_t *req, int *flag)
 	return (rc == MPI_SUCCESS) ? 0 : -1;
 }
 
-int wc_mpi_waitall(size_t count, wc_mpirequest_t *reqarray)
+int wc_mpi_waitall(int count, wc_mpirequest_t *reqarray)
 {
 	int rc = MPI_Waitall(count, reqarray, MPI_STATUSES_IGNORE);
 	WC_HANDLE_MPI_ERROR(MPI_Waitall, rc);
 	return (rc == MPI_SUCCESS) ? 0 : -1;
 }
 
-int wc_mpi_waitany(size_t count, wc_mpirequest_t *reqarray, int *index)
+int wc_mpi_waitany(int count, wc_mpirequest_t *reqarray, int *index)
 {
 	int rc = MPI_Waitany(count, reqarray, index, MPI_STATUSES_IGNORE);
 	WC_HANDLE_MPI_ERROR(MPI_Waitany, rc);
@@ -272,12 +274,12 @@ int wc_mpi_test(wc_mpirequest_t *req, int *flag)
 	return 0;
 }
 
-int wc_mpi_waitall(size_t count, wc_mpirequest_t *reqarray)
+int wc_mpi_waitall(int count, wc_mpirequest_t *reqarray)
 {
 	return 0;
 }
 
-int wc_mpi_waitany(size_t count, wc_mpirequest_t *reqarray, int *index)
+int wc_mpi_waitany(int count, wc_mpirequest_t *reqarray, int *index)
 {
 	if (index)
 		index = 0;

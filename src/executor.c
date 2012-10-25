@@ -1156,6 +1156,15 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 					break;
 				}
 				memset(recvdata.ptr, 0, recvdata.len);
+				// now receive the data here first
+				if (wc_mpi_recv(recvdata.ptr, recvdata.len, MPI_BYTE,
+								status.MPI_SOURCE, status.MPI_TAG) < 0) {
+					WC_ERROR("Recv failed for slave results from slave: %d\n",
+							status.MPI_SOURCE);
+					WC_FREE(recvdata.ptr); // free the memory
+					rc = WC_EXE_ERR_MPI;
+					break;
+				}
 				// deserialize the data into the buffer
 				results = wc_resultsdata_deserialize(&recvdata, &rescount);
 				if (results) {
@@ -1233,7 +1242,7 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 			}
 			WC_DEBUG("Waiting for all slaves to receive the stop before"
 					" exiting\n");
-			if (wc_mpi_waitall(rdx, requests) < 0) {
+			if (rdx > 0 && wc_mpi_waitall(rdx, requests) < 0) {
 				WC_WARN("error in waiting for slaves to receive stop\n");
 			}
 			rc = WC_EXE_STOP;
@@ -1415,7 +1424,7 @@ do { \
 					wc_data_t senddata = { 0 };
 					// minimum is 2. we just use this here
 					wc_mpirequest_t requests[2];
-					memset(requests, 0, 2 * sizeof(wc_mpirequest_t));
+					memset(requests, 0, sizeof(requests));
 					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
 						// zero out the ptr,len parts for cleanliness
