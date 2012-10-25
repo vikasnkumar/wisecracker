@@ -653,7 +653,8 @@ static wc_err_t wc_executor_slave_pre_run(wc_exec_t *wc)
 	return rc;
 }
 
-void CL_CALLBACK wc_executor_device_event_notify(cl_event ev, cl_int status, void *user)
+static void CL_CALLBACK wc_executor_device_event_notify(cl_event ev,
+										cl_int status, void *user)
 {
 	wc_exec_t *wc = (wc_exec_t *)user;
 	if (!wc || !wc->userevent)
@@ -668,14 +669,12 @@ void CL_CALLBACK wc_executor_device_event_notify(cl_event ev, cl_int status, voi
 	}
 }
 
-wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
+static wc_err_t wc_executor_device_start(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
-		cl_event *events = NULL;
-		cl_ulong2 *device_ranges = NULL;
 		if (!wc->ocl_initialized || !wc_opencl_is_usable(&wc->ocl)) {
 			WC_ERROR("OpenCL internal runtime is not usable\n");
 			rc = WC_EXE_ERR_BAD_STATE;
@@ -697,6 +696,52 @@ wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 				break;
 		}
 		wc->state = WC_EXECSTATE_DEVICE_STARTED;
+	} while (0);
+	return rc;
+}
+
+static wc_err_t wc_executor_device_finish(wc_exec_t *wc)
+{
+	wc_err_t rc = WC_EXE_OK;
+	if (!wc)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	do {
+		if (!wc->ocl_initialized || !wc_opencl_is_usable(&wc->ocl)) {
+			WC_ERROR("OpenCL internal runtime is not usable\n");
+			rc = WC_EXE_ERR_BAD_STATE;
+			break;
+		}
+		// let's invoke the device finish functions
+		if (wc->cbs.on_device_finish) {
+			uint32_t idx;
+			for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+				wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+				rc = wc->cbs.on_device_finish(wc, dev, idx, wc->cbs.user,
+											&wc->globaldata);
+				if (rc != WC_EXE_OK) {
+					WC_ERROR("Device %u returned error: %d\n", idx, rc);
+					break;
+				}
+			}
+			if (rc != WC_EXE_OK)
+				break;
+		}
+		wc->state = WC_EXECSTATE_DEVICE_FINISHED;
+	} while (0);
+	return rc;
+}
+
+static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
+{
+	wc_err_t rc = WC_EXE_OK;
+	if (!wc)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	do {
+		cl_event *events = NULL;
+		cl_ulong2 *device_ranges = NULL;
+		rc = wc_executor_device_start(wc);
+		if (rc != WC_EXE_OK)
+			break;
 		events = WC_MALLOC(sizeof(cl_event) * wc->ocl.device_max);
 		if (!events) {
 			WC_ERROR_OUTOFMEMORY(sizeof(cl_event) * wc->ocl.device_max);
@@ -857,22 +902,9 @@ wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 		WC_FREE(device_ranges);
 		if (rc != WC_EXE_OK && rc != WC_EXE_STOP)
 			break;
-		// let's invoke the device finish functions
-		if (wc->cbs.on_device_finish) {
-			uint32_t idx;
-			for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-				wc_cldev_t *dev = &(wc->ocl.devices[idx]);
-				rc = wc->cbs.on_device_finish(wc, dev, idx, wc->cbs.user,
-											&wc->globaldata);
-				if (rc != WC_EXE_OK) {
-					WC_ERROR("Device %u returned error: %d\n", idx, rc);
-					break;
-				}
-			}
-			if (rc != WC_EXE_OK)
-				break;
-		}
-		wc->state = WC_EXECSTATE_DEVICE_FINISHED;
+		rc = wc_executor_device_finish(wc);
+		if (rc != WC_EXE_OK)
+			break;
 	} while (0);
 	return rc;
 }
