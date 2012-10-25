@@ -236,9 +236,9 @@ int wc_mpi_iprobe(int src_id, int tag, int *flag, wc_mpistatus_t *status)
 	if (flag)
 		flag = 0;
 	if (status) {
-		status.MPI_SOURCE = 0;
-		status.MPI_TAG = tag;
-		status.MPI_ERROR = 0;
+		status->MPI_SOURCE = 0;
+		status->MPI_TAG = tag;
+		status->MPI_ERROR = 0;
 	}
 	return 0;
 }
