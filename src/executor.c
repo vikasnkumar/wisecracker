@@ -780,12 +780,12 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 				start = wc->my_task_range[0];
 				end = 0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-					uint64_t tasks4system;
+					uint64_t tasks4device;
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
 					events[idx] = (cl_event)0;
-					tasks4system = dev->workgroup_sz * dev->compute_units *
+					tasks4device = dev->workgroup_sz * dev->compute_units *
 									wc->task_range_multiplier;
-					end = start + tasks4system;
+					end = start + tasks4device;
 					if (end >= wc->my_task_range[1])
 						end = wc->my_task_range[1];
 					device_ranges[idx].s[0] = start;
@@ -909,6 +909,213 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 	return rc;
 }
 
+static int wc_loop_breaker = 0;
+// we want to split the master_run into 2 functions
+WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
+{
+	wc_exec_t *wc = (wc_exec_t *)arg;
+	if (!wc) {
+		WC_ERROR("Thread argument was NULL\n");
+		return (WC_THREAD_RETURN)0;
+	}
+	wc_loop_breaker = 0;
+	while (!wc_loop_breaker) {
+	}
+	return (WC_THREAD_RETURN)0;
+}
+
+static wc_err_t wc_executor_slave_system_run(wc_exec_t *wc)
+{
+	wc_err_t rc = WC_EXE_OK;
+	if (!wc)
+		return WC_EXE_ERR_INVALID_PARAMETER;
+	do {
+		cl_event *events = NULL;
+		cl_ulong2 *device_ranges = NULL;
+		rc = wc_executor_device_start(wc);
+		if (rc != WC_EXE_OK)
+			break;
+		events = WC_MALLOC(sizeof(cl_event) * wc->ocl.device_max);
+		if (!events) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_event) * wc->ocl.device_max);
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(events, 0, sizeof(cl_event) * wc->ocl.device_max);
+		device_ranges = WC_MALLOC(sizeof(cl_ulong2) * wc->ocl.device_max);
+		if (!device_ranges) {
+			WC_ERROR_OUTOFMEMORY(sizeof(cl_ulong2) * wc->ocl.device_max);
+			rc = WC_EXE_ERR_OUTOFMEMORY;
+			break;
+		}
+		memset(device_ranges, 0, sizeof(cl_ulong2) * wc->ocl.device_max);
+		// we need to do the main stuff here for the current system
+		do {
+			uint64_t tasks_completed = 0;
+			uint32_t idx;
+			uint64_t num_tasks = 0;
+
+			tasks_completed = 0;
+			num_tasks = wc->my_task_range[1] - wc->my_task_range[0];
+			if (num_tasks == 0)
+				break;
+			do {
+				uint64_t start, end;
+				rc = WC_EXE_OK;
+				wc->refcount = 0;
+				wc->userevent = (cl_event)0;
+				wc->userevent = wc_opencl_event_create(&wc->ocl);
+				if (!wc->userevent) {
+					rc = WC_EXE_ERR_OPENCL;
+					WC_WARN("User event failed to create. Shaky state\n");
+					break;
+				}
+				start = wc->my_task_range[0];
+				end = 0;
+				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+					uint64_t tasks4device;
+					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+					events[idx] = (cl_event)0;
+					tasks4device = dev->workgroup_sz * dev->compute_units *
+									wc->task_range_multiplier;
+					end = start + tasks4device;
+					if (end >= wc->my_task_range[1])
+						end = wc->my_task_range[1];
+					device_ranges[idx].s[0] = start;
+					device_ranges[idx].s[1] = end;
+					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
+							wc->cbs.user, &wc->globaldata, start, end,
+							&events[idx]);
+					if (rc != WC_EXE_OK) {
+						WC_ERROR("Error occurred while running device work:"
+								" Range(%"PRIu64",%"PRIu64"). Completed(%"PRIu64")\n",
+								start, end, tasks_completed);
+						break;
+					}
+					// Wait for events here
+					// if no events are returned then we don't care and will not
+					// wait for anything
+					if (events[idx]) {
+						if (wc_opencl_event_enqueue_wait(dev, &events[idx], 1,
+									wc_executor_device_event_notify, wc) < 0) {
+							rc = WC_EXE_ERR_OPENCL;
+							WC_ERROR("Unable to set wait for event\n");
+							break;
+						}
+						wc->refcount++;
+					}
+					// flush the command queue for the device
+					if (wc_opencl_flush_cmdq(dev) < 0) {
+						rc = WC_EXE_ERR_OPENCL;
+						break;
+					}
+					tasks_completed += end - start;
+					start = end;
+					if (start >= wc->my_task_range[1])
+						break;
+					if (tasks_completed >= num_tasks)
+						break;
+				}
+				if (rc != WC_EXE_OK || rc < 0)
+					break;
+				// we have events to wait for
+				if (wc->refcount > 0) {
+					rc = wc_opencl_event_wait(&wc->userevent, 1);
+					if (rc < 0) {
+						rc = WC_EXE_ERR_OPENCL;
+						break;
+					}
+				}
+				// gets here when event is set
+				wc_opencl_event_release(wc->userevent);
+				wc->userevent = (cl_event)0;
+				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+					if (events[idx])
+						wc_opencl_event_release(events[idx]);
+					events[idx] = (cl_event)0;
+				}
+				//FIXME; should we call this on demand @ every event callback or
+				//wait for the collection of events to complete first ?
+				if (wc->cbs.on_device_range_done) {
+					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+						wc_data_t results = { 0 };
+						wc_err_t errs = wc->cbs.on_device_range_done(wc, dev,
+								idx, wc->cbs.user, &wc->globaldata,
+								device_ranges[idx].s[0],
+								device_ranges[idx].s[1],
+								&results);
+						//TODO: send data back to master and invoke the
+						//on-receive event
+						if (wc->cbs.on_receive_range_results) {
+							wc_err_t errm = wc->cbs.on_receive_range_results(wc,
+									wc->cbs.user, device_ranges[idx].s[0],
+									device_ranges[idx].s[1], &results);
+							//TODO: propagate this stop to slaves
+							if (errm == WC_EXE_STOP) {
+								WC_INFO("User requested a stop.\n");
+								rc = errm;
+								break;
+							}
+							if (errm != WC_EXE_OK) {
+								WC_ERROR("Error occurred in callback\n");
+								rc = WC_EXE_ERR_BAD_STATE;
+								break;
+							}
+						}
+						//TODO: propagate this stop to master
+						if (errs == WC_EXE_STOP) {
+							WC_INFO("User requested a stop.\n");
+							rc = errs;
+							break;
+						}
+						if (errs != WC_EXE_OK) {
+							WC_ERROR("Error occurred in callback\n");
+							rc = WC_EXE_ERR_BAD_STATE;
+							break;
+						}
+						// do this on both master and slave
+						WC_FREE(results.ptr);
+					}
+				}
+				// TODO: call progress only on master based on tasks completed
+				if (wc->cbs.progress) {
+					double percent = ((double)(100.0 * tasks_completed)) /
+															num_tasks;
+					wc->cbs.progress((float)percent, wc->cbs.user);
+				}
+				if (rc != WC_EXE_OK)
+					break;
+			} while (tasks_completed < num_tasks);
+			if (rc != WC_EXE_OK)
+				break;
+		} while (0);
+		wc->state = WC_EXECSTATE_DEVICE_DONE_RUNNING;
+		WC_FREE(events);
+		WC_FREE(device_ranges);
+		if (rc != WC_EXE_OK && rc != WC_EXE_STOP)
+			break;
+		rc = wc_executor_device_finish(wc);
+		if (rc != WC_EXE_OK)
+			break;
+	} while (0);
+	return rc;
+}
+
+static wc_err_t wc_executor_master_system_run(wc_exec_t *wc)
+{
+	wc_err_t rc = WC_EXE_OK;
+	wc_thread_t thread = (wc_thread_t)0;
+	if (WC_THREAD_CREATE(&thread, wc_executor_master_receiver, wc) != 0) {
+		WC_ERROR("Failed to create master receiver thread.\n");
+		return WC_EXE_ERR_SYSTEM;
+	}
+	rc = wc_executor_slave_system_run(wc);
+	if (thread)
+		WC_THREAD_JOIN(&thread);
+	return rc;
+}
+
 wc_err_t wc_executor_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
@@ -926,15 +1133,14 @@ wc_err_t wc_executor_run(wc_exec_t *wc)
 		}
 		if (rc != WC_EXE_OK)
 			break;
-		// run the slave method if single machine mode
+		// run the special method if single machine mode
 		if (wc->system_id == 0 && wc->num_systems <= 1) {
 			rc = wc_executor_single_system_run(wc);
 		} else {
-			if (wc->system_id == 0) {
-//				rc = wc_executor_master_system_run(wc);
-			} else {
-//				rc = wc_executor_slave_system_run(wc);
-			}
+			if (wc->system_id == 0)
+				rc = wc_executor_master_system_run(wc);
+			else
+				rc = wc_executor_slave_system_run(wc);
 		}
 		if (rc != WC_EXE_OK) {
 			WC_WARN("error occurred during the run: %d\n", rc);

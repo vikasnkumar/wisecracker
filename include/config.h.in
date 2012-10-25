@@ -208,6 +208,11 @@ EXTERN_C_BEGIN
 	#include <libgen.h>
 #endif
 
+#cmakedefine WC_PTHREAD_H
+#ifdef WC_PTHREAD_H
+	#include <pthread.h>
+#endif
+
 #cmakedefine WC_MPI_H
 
 EXTERN_C_END
