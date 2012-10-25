@@ -47,13 +47,7 @@
 	#ifndef MPI_ANY_SOURCE
 		#define MPI_ANY_SOURCE -1
 	#endif
-	typedef struct {
-		void *ptr; /* just like that */
-	} wc_mpistatus_t;
-	#ifndef MPI_STATUS_IGNORE
-		#define MPI_STATUS_IGNORE (wc_mpistatus_t *)0
-	#endif
-	typedef wc_mpistatus_t wc_mpirequest_t;
+	typedef void * wc_mpirequest_t;
 	#ifndef MPI_REQUEST_NULL
 		#define MPI_REQUEST_NULL (wc_mpirequest_t *)0
 	#endif
@@ -77,14 +71,18 @@ int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
 int wc_mpi_scatter(void *sendbuf, int scound, void *sendtype, void *recvbuf,
 					int rcount, void *recvtype, int master_id);
 
-int wc_mpi_iprobe(int src_id, int tag, int *flag, wc_mpistatus_t *status);
+int wc_mpi_iprobe(int src_id, int tag, int *flag);
 
 int wc_mpi_irecv(void *buffer, int count, void *datatype, int src_id, int tag,
 				wc_mpirequest_t *req);
 
+int wc_mpi_recv(void *buffer, int count, void *datatype, int src_id, int tag);
+
 int wc_mpi_isend(void *buffer, int count, void *datatype, int dest_id, int tag,
 				wc_mpirequest_t *req);
 
-int wc_mpi_test(wc_mpirequest_t *req, int *flag, wc_mpistatus_t *status);
+int wc_mpi_test(wc_mpirequest_t *req, int *flag);
+
+int wc_mpi_wait(size_t count, wc_mpirequest_t *reqarray);
 
 #endif // __WISECRACKER_MPI_INTERNAL_H__
