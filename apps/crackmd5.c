@@ -34,7 +34,7 @@ static unsigned char wc_md5_cl_code[] = {
 static const size_t wc_md5_cl_codelen = sizeof(wc_md5_cl_code);
 const char *wc_md5_cl_kernel = "wc_md5sum_check";
 
-struct wc_user {
+typedef struct {
 	char *cl_filename;
 	uint32_t max_devices;
 	wc_devtype_t device_type;
@@ -42,7 +42,7 @@ struct wc_user {
 	uint8_t nchars; // a single byte can have values 0-255
 	char *md5sum;
 	char *prefix;
-	struct wc_per_device {
+	struct crackmd5_per_device {
 		cl_kernel kernel; // kernel
 		cl_mem mem; // memory buffer
 		cl_uchar16 match; // buffer to store output
@@ -62,19 +62,19 @@ struct wc_user {
 	// store the result in this
 	uint8_t found;
 	cl_uchar16 match;
-};
+} crackmd5_user_t;
 
-struct wc_global_data {
+typedef struct {
 	cl_uchar16 input;
 	cl_uchar16 digest;
 	cl_uint charset; // an integer copy of the charset
-};
+} crackmd5_global_t;
 
-struct wc_results_data {
+typedef struct {
 	cl_uchar16 match;
 	uint64_t kernelcounter;
 	int system_id;
-};
+} crackmd5_results_t;
 
 int wc_user_usage(const char *app)
 {
@@ -104,7 +104,7 @@ int wc_user_usage(const char *app)
 	exit(1);
 }
 
-int wc_user_parse(int argc, char **argv, struct wc_user *user)
+int wc_user_parse(int argc, char **argv, crackmd5_user_t *user)
 {
 	int opt = -1;
 	int rc = 0;
@@ -185,7 +185,7 @@ int wc_user_parse(int argc, char **argv, struct wc_user *user)
 	return rc;
 }
 
-void wc_user_dump(const struct wc_user *user)
+void wc_user_dump(const crackmd5_user_t *user)
 {
 	if (user) {
 		if (user->cl_filename)
@@ -207,7 +207,7 @@ void wc_user_dump(const struct wc_user *user)
 	}
 }
 
-void wc_user_cleanup(struct wc_user *user)
+void wc_user_cleanup(crackmd5_user_t *user)
 {
 	if (user) {
 		WC_FREE(user->cl_filename);
@@ -244,13 +244,13 @@ uint64_t crackmd5_possibilities(wc_util_charset_t chs, uint8_t nchars)
 
 char *crackmd5_get_buildopts(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	if (!user)
 		return NULL;
-	if (wcu->nchars >= 1 && wcu->nchars <= 8) {
+	if (cuser->nchars >= 1 && cuser->nchars <= 8) {
 		char *buildopts = WC_MALLOC(256);
 		if (buildopts) {
-			int nc = (int)wcu->nchars;
+			int nc = (int)cuser->nchars;
 			snprintf(buildopts, 256, "-DWC_MD5_CHECK_SIZE=%d", nc);
 			return buildopts;
 		} else {
@@ -272,15 +272,15 @@ void crackmd5_on_compile(const wc_exec_t *wc, void *user, uint8_t success)
 char *crackmd5_get_code(const wc_exec_t *wc, void *user, size_t *codelen)
 {
 	unsigned char *code = NULL;
-	struct wc_user *wcu = (struct wc_user *)user;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	size_t clen = 0;
-	if (wcu && wcu->cl_filename) {
-		int rc = wc_util_glob_file(wcu->cl_filename, &code, &clen);
+	if (cuser && cuser->cl_filename) {
+		int rc = wc_util_glob_file(cuser->cl_filename, &code, &clen);
 		if (rc < 0 || !code || clen < 1) {
-			WC_ERROR("Unable to load code from %s\n", wcu->cl_filename);
+			WC_ERROR("Unable to load code from %s\n", cuser->cl_filename);
 			return NULL;
 		}
-		WC_INFO("Using custom code from %s\n", wcu->cl_filename);
+		WC_INFO("Using custom code from %s\n", cuser->cl_filename);
 		if (codelen)
 			*codelen = clen;
 	} else {
@@ -302,24 +302,24 @@ char *crackmd5_get_code(const wc_exec_t *wc, void *user, size_t *codelen)
 
 uint64_t crackmd5_get_num_tasks(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	size_t pfxlen = 0;
 	uint8_t zchars = 0;
 	uint64_t max_possibilities = 0;
-	if (!wcu)
+	if (!cuser)
 		return 0;
-	if (wcu->prefix)
-		pfxlen = strlen(wcu->prefix);
-	if (pfxlen >= wcu->nchars) {
+	if (cuser->prefix)
+		pfxlen = strlen(cuser->prefix);
+	if (pfxlen >= cuser->nchars) {
 		WC_WARN("Input string is already complete. Max length accepted is %d\n",
-				(int)wcu->nchars);
+				(int)cuser->nchars);
 		return 0;
 	}
-	zchars = wcu->nchars - (uint8_t)pfxlen;
-	max_possibilities = crackmd5_possibilities(wcu->charset, zchars);
+	zchars = cuser->nchars - (uint8_t)pfxlen;
+	max_possibilities = crackmd5_possibilities(cuser->charset, zchars);
 	if (max_possibilities == 0) {
 		WC_WARN("Max possibilities was calculated to be 0 for %s of %d chars\n",
-				wc_util_charset_tostring(wcu->charset), (int)zchars);
+				wc_util_charset_tostring(cuser->charset), (int)zchars);
 		return 0;
 	}
 	WC_INFO("Max possibilities: %"PRIu64"\n", max_possibilities);
@@ -328,25 +328,25 @@ uint64_t crackmd5_get_num_tasks(const wc_exec_t *wc, void *user)
 
 wc_err_t crackmd5_on_start(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (wcu) {
-		const size_t wcpdsz = sizeof(struct wc_per_device);
-		wcu->num_devices = wc_executor_num_devices(wc);
-		if (wcu->num_devices == 0) {
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
+	if (cuser) {
+		const size_t wcpdsz = sizeof(struct crackmd5_per_device);
+		cuser->num_devices = wc_executor_num_devices(wc);
+		if (cuser->num_devices == 0) {
 			WC_DEBUG("No devices found on the system\n");
 			return WC_EXE_ERR_OPENCL;
 		}
-		wcu->devices = WC_MALLOC(wcu->num_devices * wcpdsz);
-		if (!wcu->devices) {
-			wcu->num_devices = 0;
-			WC_ERROR_OUTOFMEMORY(wcu->num_devices * wcpdsz);
+		cuser->devices = WC_MALLOC(cuser->num_devices * wcpdsz);
+		if (!cuser->devices) {
+			cuser->num_devices = 0;
+			WC_ERROR_OUTOFMEMORY(cuser->num_devices * wcpdsz);
 			return WC_EXE_ERR_OUTOFMEMORY;
 		}
-		memset(wcu->devices, 0, wcu->num_devices * wcpdsz);
-		wcu->kernelcounter = 0;
-		wc_util_timeofday(&wcu->tv1);
-		wcu->prev_progress = 0.0;
-		wcu->ttinterval = -1.0;
+		memset(cuser->devices, 0, cuser->num_devices * wcpdsz);
+		cuser->kernelcounter = 0;
+		wc_util_timeofday(&cuser->tv1);
+		cuser->prev_progress = 0.0;
+		cuser->ttinterval = -1.0;
 	} else {
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	}
@@ -355,10 +355,10 @@ wc_err_t crackmd5_on_start(const wc_exec_t *wc, void *user)
 
 wc_err_t crackmd5_on_finish(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (wcu) {
-		WC_FREE(wcu->devices);
-		wcu->num_devices = 0;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
+	if (cuser) {
+		WC_FREE(cuser->devices);
+		cuser->num_devices = 0;
 	} else {
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	}
@@ -368,8 +368,8 @@ wc_err_t crackmd5_on_finish(const wc_exec_t *wc, void *user)
 wc_err_t crackmd5_get_global_data(const wc_exec_t *wc, void *user,
 								wc_data_t *out)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	struct wc_global_data *gd = WC_MALLOC(sizeof(*gd));
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
+	crackmd5_global_t *gd = WC_MALLOC(sizeof(*gd));
 	size_t pfxlen = 0;
 	size_t idx;
 	if (!user || !out)
@@ -378,17 +378,17 @@ wc_err_t crackmd5_get_global_data(const wc_exec_t *wc, void *user,
 		WC_ERROR_OUTOFMEMORY(sizeof(*gd));
 		return WC_EXE_ERR_OUTOFMEMORY;
 	}
-	pfxlen = (wcu->prefix) ? strlen(wcu->prefix) : 0;
+	pfxlen = (cuser->prefix) ? strlen(cuser->prefix) : 0;
 	memset(gd, 0, sizeof(*gd));
 	// copy the initial input
 	for (idx = 0; idx < pfxlen; ++idx)
-		gd->input.s[idx] = (cl_uchar)wcu->prefix[idx];
+		gd->input.s[idx] = (cl_uchar)cuser->prefix[idx];
 	// convert md5sum text to a digest
 	for (idx = 0; idx < 2 * MD5_DIGEST_LENGTH; idx += 2)
-		gd->digest.s[idx >> 1] = (wc_md5_decoder[(int)wcu->md5sum[idx]] << 4) |
-							wc_md5_decoder[(int)wcu->md5sum[idx + 1]];
+		gd->digest.s[idx >> 1] = (wc_md5_decoder[(int)cuser->md5sum[idx]] << 4) |
+							wc_md5_decoder[(int)cuser->md5sum[idx + 1]];
 
-	gd->charset = (cl_uint)wcu->charset;
+	gd->charset = (cl_uint)cuser->charset;
 	out->ptr = gd;
 	out->len = (uint32_t)sizeof(*gd);
 	return WC_EXE_OK;
@@ -405,24 +405,24 @@ void crackmd5_free_global_data(const wc_exec_t *wc, void *user,
 
 uint32_t crackmd5_get_multiplier(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (wcu)
-		return (uint32_t)wc_util_charset_size(wcu->charset);
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
+	if (cuser)
+		return (uint32_t)wc_util_charset_size(cuser->charset);
 	return 1;
 }
 
 void crackmd5_progress(float percent, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (wcu) {
-		if ((percent - wcu->prev_progress) > 0.5) {
-			wcu->prev_progress = percent;
-			if (wcu->ttinterval < 0.0) {
-				wc_util_timeofday(&wcu->tv2);
-				wcu->ttinterval = WC_TIME_TAKEN(wcu->tv1, wcu->tv2);
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
+	if (cuser) {
+		if ((percent - cuser->prev_progress) > 0.5) {
+			cuser->prev_progress = percent;
+			if (cuser->ttinterval < 0.0) {
+				wc_util_timeofday(&cuser->tv2);
+				cuser->ttinterval = WC_TIME_TAKEN(cuser->tv1, cuser->tv2);
 			}
 			WC_INFO("Progress: %.02f%% Estimated Remaining Time: %lf seconds\n",
-					percent, wcu->ttinterval * (100.0 - percent));
+					percent, cuser->ttinterval * (100.0 - percent));
 		}
 	}
 }
@@ -430,42 +430,42 @@ void crackmd5_progress(float percent, void *user)
 wc_err_t crackmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 		uint32_t devindex, void *user, const wc_data_t *gdata)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	cl_int rc = CL_SUCCESS;
-	const struct wc_global_data *gd = NULL;
-	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
+	const crackmd5_global_t *gd = NULL;
+	if (!wc || !dev || !cuser || !gdata || !gdata->ptr)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices ||
+	if (!cuser->devices || devindex >= cuser->num_devices ||
 			gdata->len < sizeof(*gd))
 		return WC_EXE_ERR_BAD_STATE;
-	gd = (const struct wc_global_data *)gdata->ptr;
+	gd = (const crackmd5_global_t *)gdata->ptr;
 
 	do {
 		cl_uint argc = 0;
-		struct wc_per_device *wcd = &wcu->devices[devindex];
+		struct crackmd5_per_device *cpd = &cuser->devices[devindex];
 
-		wcd->nchars = wcu->nchars;
+		cpd->nchars = cuser->nchars;
 		// create the kernel and memory objects per device
-		wcd->kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
+		cpd->kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
-		wcd->mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
+		cpd->mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
 									sizeof(cl_uchar16), NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 		// now we assign the arguments to each kernel
 		argc = 0;
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_uchar16),
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_uchar16),
 				&gd->input);
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_uchar16),
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_uchar16),
 				&gd->digest);
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_mem),
-				&wcd->mem);
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_uint),
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_mem),
+				&cpd->mem);
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_uint),
 				&gd->charset);
 		// store the stride argument
-		wcd->stride_argc = argc;
-		wcd->stride = 0;
-		rc |= clSetKernelArg(wcd->kernel, wcd->stride_argc, sizeof(cl_ulong),
-				&wcd->stride);
+		cpd->stride_argc = argc;
+		cpd->stride = 0;
+		rc |= clSetKernelArg(cpd->kernel, cpd->stride_argc, sizeof(cl_ulong),
+				&cpd->stride);
 		WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 	} while (0);
 	return (rc == CL_SUCCESS) ? WC_EXE_OK : WC_EXE_ERR_OPENCL;
@@ -475,25 +475,25 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		uint32_t devindex, void *user, const wc_data_t *gdata,
 		uint64_t start, uint64_t end, cl_event *outevent)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	cl_int rc = CL_SUCCESS;
-	const struct wc_global_data *gd = NULL;
-	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
+	const crackmd5_global_t *gd = NULL;
+	if (!wc || !dev || !cuser || !gdata || !gdata->ptr)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices ||
+	if (!cuser->devices || devindex >= cuser->num_devices ||
 			gdata->len < sizeof(*gd))
 		return WC_EXE_ERR_BAD_STATE;
 	if (start > end)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 
-	gd = (const struct wc_global_data *)gdata->ptr;
+	gd = (const crackmd5_global_t *)gdata->ptr;
 	do {
 		const cl_uint workdim = 1;
 		uint64_t offset_limit = 0;
-		struct wc_per_device *wcd = &wcu->devices[devindex];
+		struct crackmd5_per_device *cpd = &cuser->devices[devindex];
 
-		wcd->work_offset = start;
-		wcd->work_size = end - start;
+		cpd->work_offset = start;
+		cpd->work_size = end - start;
 		if (dev->address_bits == sizeof(cl_uint) * CL_CHAR_BIT) {
 			offset_limit = CL_UINT_MAX;
 		} else if (dev->address_bits == sizeof(cl_ulong) * CL_CHAR_BIT) {
@@ -502,36 +502,36 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 			// play it safe
 			offset_limit = CL_UINT_MAX;
 		}
-		memset(&(wcd->match), 0, sizeof(cl_uchar16));
+		memset(&(cpd->match), 0, sizeof(cl_uchar16));
 		// check for global_work_offset_limit here and adjust stride
-		if ((wcd->work_offset + wcd->work_size) >= offset_limit) {
+		if ((cpd->work_offset + cpd->work_size) >= offset_limit) {
 			WC_DEBUG("Work offset: %"PRIu64" size: %"PRIu64" for device[%u]\n",
-					(uint64_t)wcd->work_offset, (uint64_t)wcd->work_size, devindex);
-			wcd->stride += offset_limit;
-			wcd->work_offset = wcd->work_offset + wcd->work_size -
+					(uint64_t)cpd->work_offset, (uint64_t)cpd->work_size, devindex);
+			cpd->stride += offset_limit;
+			cpd->work_offset = cpd->work_offset + cpd->work_size -
 								offset_limit;
-			rc |= clSetKernelArg(wcd->kernel, wcd->stride_argc,
-					sizeof(cl_ulong), &wcd->stride);
+			rc |= clSetKernelArg(cpd->kernel, cpd->stride_argc,
+					sizeof(cl_ulong), &cpd->stride);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 			WC_DEBUG("Global work offset reset to %"PRIu64". Stride: %"PRIu64"\n",
-					(uint64_t)wcd->work_offset, wcd->stride);
-			WC_DEBUG("Reset for kernel number: %"PRIu64"\n", wcu->kernelcounter);
+					(uint64_t)cpd->work_offset, cpd->stride);
+			WC_DEBUG("Reset for kernel number: %"PRIu64"\n", cuser->kernelcounter);
 		}
 		// enqueue the mem-write for the device
-		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->mem, CL_FALSE,
-				0, sizeof(cl_uchar16), &wcd->match, 0, NULL, NULL);
+		rc = clEnqueueWriteBuffer(dev->cmdq, cpd->mem, CL_FALSE,
+				0, sizeof(cl_uchar16), &cpd->match, 0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
 		// enqueue the kernel for the device
-		rc = clEnqueueNDRangeKernel(dev->cmdq, wcd->kernel, workdim,
-				&(wcd->work_offset), &(wcd->work_size), NULL,
+		rc = clEnqueueNDRangeKernel(dev->cmdq, cpd->kernel, workdim,
+				&(cpd->work_offset), &(cpd->work_size), NULL,
 				0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
 		// enqueue the mem-read for the device
-		rc = clEnqueueReadBuffer(dev->cmdq, wcd->mem, CL_FALSE,
-				0, sizeof(cl_uchar16), &wcd->match, 0, NULL,
+		rc = clEnqueueReadBuffer(dev->cmdq, cpd->mem, CL_FALSE,
+				0, sizeof(cl_uchar16), &cpd->match, 0, NULL,
 				outevent);
 		WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
-		wcu->kernelcounter++;
+		cuser->kernelcounter++;
 	} while (0);
 	return (rc == CL_SUCCESS) ? WC_EXE_OK : WC_EXE_ERR_OPENCL;
 }
@@ -540,11 +540,11 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		uint32_t devindex, void *user, const wc_data_t *gdata,
 		uint64_t start, uint64_t end, wc_data_t *results)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	struct wc_per_device *wcd = NULL;
-	if (!wc || !dev || !wcu)
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
+	struct crackmd5_per_device *cpd = NULL;
+	if (!wc || !dev || !cuser)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices)
+	if (!cuser->devices || devindex >= cuser->num_devices)
 		return WC_EXE_ERR_BAD_STATE;
 	// nullify result for those that do not match
 	if (results) {
@@ -552,22 +552,22 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		results->len = 0;
 	}
 	// check for matches
-	wcd = &wcu->devices[devindex];
-	if (wcd->match.s[0] != 0) {
+	cpd = &cuser->devices[devindex];
+	if (cpd->match.s[0] != 0) {
 		int8_t l = 0;
-		struct wc_results_data *res = NULL;
-		WC_INFO("Found match in %"PRIu64"th kernel call: ", wcu->kernelcounter);
-		for (l = 0; l < wcd->nchars; ++l)
-			WC_NULL("%c", wcd->match.s[l]);
+		crackmd5_results_t *res = NULL;
+		WC_INFO("Found match in %"PRIu64"th kernel call: ", cuser->kernelcounter);
+		for (l = 0; l < cpd->nchars; ++l)
+			WC_NULL("%c", cpd->match.s[l]);
 		WC_NULL("\n");
-//		wcu->found = 1;
-//		memcpy(&wcu->match, &wcd->match, sizeof(wcd->match));
+//		cuser->found = 1;
+//		memcpy(&cuser->match, &cpd->match, sizeof(cpd->match));
 
 		res = WC_MALLOC(sizeof(*res));
 		if (res) {
 			memset(res, 0, sizeof(*res));
-			memcpy(&res->match, &wcd->match, sizeof(wcd->match));
-			res->kernelcounter = wcu->kernelcounter;
+			memcpy(&res->match, &cpd->match, sizeof(cpd->match));
+			res->kernelcounter = cuser->kernelcounter;
 			res->system_id = wc_executor_system_id(wc);
 			if (results) {
 				results->ptr = res;
@@ -586,25 +586,25 @@ wc_err_t crackmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 wc_err_t crackmd5_on_device_finish(const wc_exec_t *wc, wc_cldev_t *dev,
 		uint32_t devindex, void *user, const wc_data_t *gdata)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	cl_int rc = CL_SUCCESS;
-	struct wc_per_device *wcd = NULL;
-	if (!wc || !dev || !wcu)
+	struct crackmd5_per_device *cpd = NULL;
+	if (!wc || !dev || !cuser)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices)
+	if (!cuser->devices || devindex >= cuser->num_devices)
 		return WC_EXE_ERR_BAD_STATE;
 
 	// free the memory and other objects
-	wcd = &wcu->devices[devindex];
-	if (wcd->kernel) {
-		rc = clReleaseKernel(wcd->kernel);
-		wcd->kernel = (cl_kernel)0;
+	cpd = &cuser->devices[devindex];
+	if (cpd->kernel) {
+		rc = clReleaseKernel(cpd->kernel);
+		cpd->kernel = (cl_kernel)0;
 		if (rc != CL_SUCCESS)
 			WC_ERROR_OPENCL(clReleaseMemObject, rc);
 	}
-	if (wcd->mem) {
-		rc = clReleaseMemObject(wcd->mem);
-		wcd->mem = (cl_mem)0;
+	if (cpd->mem) {
+		rc = clReleaseMemObject(cpd->mem);
+		cpd->mem = (cl_mem)0;
 		if (rc != CL_SUCCESS)
 			WC_ERROR_OPENCL(clReleaseMemObject, rc);
 	}
@@ -614,14 +614,14 @@ wc_err_t crackmd5_on_device_finish(const wc_exec_t *wc, wc_cldev_t *dev,
 wc_err_t crackmd5_on_recv_results(const wc_exec_t *wc, void *user,
 					uint64_t start, uint64_t end, const wc_data_t *results)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	if (!wc || !user || !results || (start > end))
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	if (results && results->ptr &&
-		results->len == sizeof(struct wc_results_data)) {
-		struct wc_results_data *res = (struct wc_results_data *)results->ptr;
-		wcu->found = 1;
-		memcpy(&wcu->match, &res->match, sizeof(res->match));
+		results->len == sizeof(crackmd5_results_t)) {
+		crackmd5_results_t *res = (crackmd5_results_t *)results->ptr;
+		cuser->found = 1;
+		memcpy(&cuser->match, &res->match, sizeof(res->match));
 		WC_INFO("Found match in %"PRIu64"th kernel call on system %d\n",
 				res->kernelcounter, res->system_id);
 	}
@@ -632,7 +632,7 @@ int main(int argc, char **argv)
 {
 	wc_err_t err = WC_EXE_OK;
 	wc_exec_t *wc = NULL;
-	struct wc_user user;
+	crackmd5_user_t user;
 	wc_exec_callbacks_t callbacks;
 
 	// print license
