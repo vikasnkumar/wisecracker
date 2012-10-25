@@ -45,13 +45,13 @@ static unsigned char wc_md5_cl_code[] = {
 static const size_t wc_md5_cl_codelen = sizeof(wc_md5_cl_code);
 const char *wc_md5_cl_kernel = "wc_md5sum";
 
-struct wc_user {
+typedef struct {
 	char *cl_filename;
 	uint32_t max_devices;
 	wc_devtype_t device_type;
 	uint32_t workitems;
 	/* required for the task usage */
-	struct wc_per_device {
+	struct testmd5_per_device {
 		cl_kernel kernel;
 		cl_mem input_mem;
 		cl_mem inputlen_mem;
@@ -62,9 +62,9 @@ struct wc_user {
 	uint32_t num_devices;
 	cl_uint *input_len;
 	cl_uchar16 *digest;
-};
+} testmd5_user_t;
 
-int wc_user_usage(const char *app)
+int testmd5_user_usage(const char *app)
 {
 	printf("\nUsage: %s [OPTIONS]\n", app);
 	printf("\nOPTIONS are as follows:\n");
@@ -79,7 +79,7 @@ int wc_user_usage(const char *app)
 	exit(1);
 }
 
-int wc_user_parse(int argc, char **argv, struct wc_user *user)
+int testmd5_user_parse(int argc, char **argv, testmd5_user_t *user)
 {
 	int opt = -1;
 	int rc = 0;
@@ -113,7 +113,7 @@ int wc_user_parse(int argc, char **argv, struct wc_user *user)
 			break;
 		case 'h':
 		default:
-			wc_user_usage(argv[0]);
+			testmd5_user_usage(argv[0]);
 			break;
 		}
 	}
@@ -122,7 +122,7 @@ int wc_user_parse(int argc, char **argv, struct wc_user *user)
 	return rc;
 }
 
-void wc_user_dump(const struct wc_user *user)
+void testmd5_user_dump(const testmd5_user_t *user)
 {
 	if (user) {
 		if (user->cl_filename)
@@ -139,7 +139,7 @@ void wc_user_dump(const struct wc_user *user)
 	}
 }
 
-void wc_user_cleanup(struct wc_user *user)
+void testmd5_user_cleanup(testmd5_user_t *user)
 {
 	if (user) {
 		WC_FREE(user->cl_filename);
@@ -149,7 +149,7 @@ void wc_user_cleanup(struct wc_user *user)
 	}
 }
 
-int wc_md5_compare(const cl_uchar *d1, const cl_uchar16 *d2)
+int testmd5_compare(const cl_uchar *d1, const cl_uchar16 *d2)
 {
 	int fail = 1;
 	if (d1 && d2) {
@@ -177,39 +177,39 @@ int wc_md5_compare(const cl_uchar *d1, const cl_uchar16 *d2)
 
 wc_err_t testmd5_on_start(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (wcu) {
-		const size_t wcpdsz = sizeof(struct wc_per_device);
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	if (cuser) {
+		const size_t wcpdsz = sizeof(struct testmd5_per_device);
 		WC_DEBUG("In on_start callback, allocating stuff\n");
 		// just print something for now
-		wc_user_dump(wcu);
-		wcu->num_devices = wc_executor_num_devices(wc);
-		if (wcu->num_devices == 0) {
+		testmd5_user_dump(cuser);
+		cuser->num_devices = wc_executor_num_devices(wc);
+		if (cuser->num_devices == 0) {
 			WC_DEBUG("No devices found on system\n");
 			return WC_EXE_ERR_OPENCL;
 		}
-		wcu->devices = WC_MALLOC(wcu->num_devices * wcpdsz);
-		if (!wcu->devices) {
-			wcu->num_devices = 0;
-			WC_ERROR_OUTOFMEMORY(wcu->num_devices * wcpdsz);
+		cuser->devices = WC_MALLOC(cuser->num_devices * wcpdsz);
+		if (!cuser->devices) {
+			cuser->num_devices = 0;
+			WC_ERROR_OUTOFMEMORY(cuser->num_devices * wcpdsz);
 			return WC_EXE_ERR_OUTOFMEMORY;
 		}
-		memset(wcu->devices, 0, wcu->num_devices * wcpdsz);
-		wcu->input_len = WC_MALLOC(wcu->workitems * sizeof(cl_uint));
-		if (wcu->input_len) {
+		memset(cuser->devices, 0, cuser->num_devices * wcpdsz);
+		cuser->input_len = WC_MALLOC(cuser->workitems * sizeof(cl_uint));
+		if (cuser->input_len) {
 			cl_uint idx;
-			for (idx = 0; idx < wcu->workitems; ++idx)
-				wcu->input_len[idx] = MAX_BLOCK_LEN;
+			for (idx = 0; idx < cuser->workitems; ++idx)
+				cuser->input_len[idx] = MAX_BLOCK_LEN;
 		} else {
-			WC_ERROR_OUTOFMEMORY(wcu->workitems * sizeof(cl_uint));
+			WC_ERROR_OUTOFMEMORY(cuser->workitems * sizeof(cl_uint));
 			return WC_EXE_ERR_OUTOFMEMORY;
 		}
-		wcu->digest = WC_MALLOC(wcu->workitems * sizeof(cl_uchar16));
-		if (!wcu->digest) {
-			WC_ERROR_OUTOFMEMORY(wcu->workitems * sizeof(cl_uchar16));
+		cuser->digest = WC_MALLOC(cuser->workitems * sizeof(cl_uchar16));
+		if (!cuser->digest) {
+			WC_ERROR_OUTOFMEMORY(cuser->workitems * sizeof(cl_uchar16));
 			return WC_EXE_ERR_OUTOFMEMORY;
 		}
-		memset(wcu->digest, 0, sizeof(cl_uchar16) * wcu->workitems);
+		memset(cuser->digest, 0, sizeof(cl_uchar16) * cuser->workitems);
 	} else {
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	}
@@ -218,13 +218,13 @@ wc_err_t testmd5_on_start(const wc_exec_t *wc, void *user)
 
 wc_err_t testmd5_on_finish(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (wcu) {
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	if (cuser) {
 		WC_DEBUG("In on_finish callback.\n");
-		WC_FREE(wcu->devices);
-		wcu->num_devices = 0;
-		WC_FREE(wcu->input_len);
-		WC_FREE(wcu->digest);
+		WC_FREE(cuser->devices);
+		cuser->num_devices = 0;
+		WC_FREE(cuser->input_len);
+		WC_FREE(cuser->digest);
 	} else {
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	}
@@ -243,15 +243,15 @@ void testmd5_on_compile(const wc_exec_t *wc, void *user, uint8_t success)
 char *testmd5_get_code(const wc_exec_t *wc, void *user, size_t *codelen)
 {
 	unsigned char *code = NULL;
-	struct wc_user *wcu = (struct wc_user *)user;
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
 	size_t clen = 0;
-	if (wcu && wcu->cl_filename) {
-		int rc = wc_util_glob_file(wcu->cl_filename, &code, &clen);
+	if (cuser && cuser->cl_filename) {
+		int rc = wc_util_glob_file(cuser->cl_filename, &code, &clen);
 		if (rc < 0 || !code || clen < 1) {
-			WC_ERROR("Unable to load code from %s\n", wcu->cl_filename);
+			WC_ERROR("Unable to load code from %s\n", cuser->cl_filename);
 			return NULL;
 		}
-		WC_INFO("Using custom code from %s\n", wcu->cl_filename);
+		WC_INFO("Using custom code from %s\n", cuser->cl_filename);
 		if (codelen)
 			*codelen = clen;
 	} else {
@@ -273,53 +273,53 @@ char *testmd5_get_code(const wc_exec_t *wc, void *user, size_t *codelen)
 
 uint64_t testmd5_get_num_tasks(const wc_exec_t *wc, void *user)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	return (wcu) ? (uint64_t)wcu->workitems : 0;
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	return (cuser) ? (uint64_t)cuser->workitems : 0;
 }
 
 wc_err_t testmd5_get_global_data(const wc_exec_t *wc, void *user,
 								wc_data_t *out)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
 	const cl_uint maxblocksz = MAX_BLOCK_LEN;
 	uint32_t ilen = 0;
 	cl_uint idx;
 	cl_uchar *input = NULL;
 	void *databuf = NULL;
-	if (!wcu || !out)
+	if (!cuser || !out)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	// initialize the variables
-	ilen = maxblocksz * wcu->workitems;
-	databuf = WC_MALLOC(ilen + sizeof(wcu->workitems));
+	ilen = maxblocksz * cuser->workitems;
+	databuf = WC_MALLOC(ilen + sizeof(cuser->workitems));
 	if (!databuf)
 		return WC_EXE_ERR_OUTOFMEMORY;
-	memset(databuf, 0, ilen + sizeof(wcu->workitems));
-	memcpy(databuf, &(wcu->workitems), sizeof(wcu->workitems));
+	memset(databuf, 0, ilen + sizeof(cuser->workitems));
+	memcpy(databuf, &(cuser->workitems), sizeof(cuser->workitems));
 	input = (cl_uchar *)databuf;
-	input += sizeof(wcu->workitems);
+	input += sizeof(cuser->workitems);
 	srand((int)time(NULL));
 	// randomly fill the buffers
-	for (idx = 0; idx < wcu->workitems ; ++idx) {
+	for (idx = 0; idx < cuser->workitems ; ++idx) {
 		cl_uint kdx;
 		for (kdx = 0; kdx < maxblocksz; ++kdx) {
 			input[kdx + idx * maxblocksz] = (cl_uchar)(rand() & 0xFF);
 		}
 	}
 	out->ptr = databuf;
-	out->len = ilen + sizeof(wcu->workitems);
+	out->len = ilen + sizeof(cuser->workitems);
 	return WC_EXE_OK;
 }
 
 wc_err_t testmd5_on_receive_global_data(const wc_exec_t *wc, void *user,
 								const wc_data_t *gdata)
 {
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (!wcu || !gdata || !gdata->ptr)
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	if (!cuser || !gdata || !gdata->ptr)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if(gdata->len < sizeof(wcu->workitems))
+	if(gdata->len < sizeof(cuser->workitems))
 		return WC_EXE_ERR_INVALID_VALUE;
-	memcpy(&wcu->workitems, gdata->ptr, sizeof(wcu->workitems));
-	WC_DEBUG("Work items received: %u\n", wcu->workitems);
+	memcpy(&cuser->workitems, gdata->ptr, sizeof(cuser->workitems));
+	WC_DEBUG("Work items received: %u\n", cuser->workitems);
 	return WC_EXE_OK;
 }
 
@@ -328,48 +328,48 @@ wc_err_t testmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 								const wc_data_t *gdata)
 {
 	cl_int rc = CL_SUCCESS;
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	if (!wc || !dev || !cuser || !gdata || !gdata->ptr)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices)
+	if (!cuser->devices || devindex >= cuser->num_devices)
 		return WC_EXE_ERR_BAD_STATE;
 	do {
 		const cl_uint maxblocksz = MAX_BLOCK_LEN;
 		cl_uint ilen;
 		cl_uint argc = 0;
 		cl_ulong localmem_per_kernel = 0;
-		struct wc_per_device *wcd = &wcu->devices[devindex];
+		struct testmd5_per_device *cpd = &cuser->devices[devindex];
 
-		ilen = maxblocksz * wcu->workitems; // same as earlier
-		memset(wcd, 0, sizeof(*wcd));
-		wcd->parallelsz = wcu->workitems;
-		wcd->l_bufsz = ilen;
-		wcd->kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
+		ilen = maxblocksz * cuser->workitems; // same as earlier
+		memset(cpd, 0, sizeof(*cpd));
+		cpd->parallelsz = cuser->workitems;
+		cpd->l_bufsz = ilen;
+		cpd->kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
-		wcd->input_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
+		cpd->input_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
 										ilen, NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-		wcd->inputlen_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
-								sizeof(cl_uint) * wcu->workitems, NULL, &rc);
+		cpd->inputlen_mem = clCreateBuffer(dev->context, CL_MEM_READ_ONLY,
+								sizeof(cl_uint) * cuser->workitems, NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
-		wcd->digest_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
-								sizeof(cl_uchar16) * wcu->workitems, NULL, &rc);
+		cpd->digest_mem = clCreateBuffer(dev->context, CL_MEM_READ_WRITE,
+								sizeof(cl_uchar16) * cuser->workitems, NULL, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateBuffer, rc);
 
-		rc = clGetKernelWorkGroupInfo(wcd->kernel, dev->id,
+		rc = clGetKernelWorkGroupInfo(cpd->kernel, dev->id,
 				CL_KERNEL_LOCAL_MEM_SIZE, sizeof(cl_ulong),
 				&localmem_per_kernel, NULL);
 		WC_ERROR_OPENCL_BREAK(clGetKernelWorkGroupInfo, rc);
 		WC_DEBUG("Local mem per kernel: %"PRIu64" for device %u\n",
 				localmem_per_kernel, devindex);
-		wcd->l_bufsz = (cl_uint)localmem_per_kernel + 2 * maxblocksz;
+		cpd->l_bufsz = (cl_uint)localmem_per_kernel + 2 * maxblocksz;
 		argc = 0;
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_mem), &wcd->input_mem);
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_mem), &wcd->inputlen_mem);
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_mem), &wcd->digest_mem);
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_uint), &wcd->parallelsz);
-		rc |= clSetKernelArg(wcd->kernel, argc++, wcd->l_bufsz, NULL);
-		rc |= clSetKernelArg(wcd->kernel, argc++, sizeof(cl_uint), &wcd->l_bufsz);
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_mem), &cpd->input_mem);
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_mem), &cpd->inputlen_mem);
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_mem), &cpd->digest_mem);
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_uint), &cpd->parallelsz);
+		rc |= clSetKernelArg(cpd->kernel, argc++, cpd->l_bufsz, NULL);
+		rc |= clSetKernelArg(cpd->kernel, argc++, sizeof(cl_uint), &cpd->l_bufsz);
 		WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
 	} while (0);
 	return (rc != CL_SUCCESS) ? WC_EXE_ERR_OPENCL : WC_EXE_OK;
@@ -382,10 +382,10 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 								cl_event *outevent)
 {
 	cl_int rc = CL_SUCCESS;
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (!wc || !dev || !wcu || !gdata || !gdata->ptr)
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	if (!wc || !dev || !cuser || !gdata || !gdata->ptr)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices || !wcu->input_len)
+	if (!cuser->devices || devindex >= cuser->num_devices || !cuser->input_len)
 		return WC_EXE_ERR_BAD_STATE;
 	if (end < start)
 		return WC_EXE_ERR_INVALID_PARAMETER;
@@ -396,25 +396,25 @@ wc_err_t testmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		size_t global_work_size = end - start;
 		size_t global_work_offset = start;
 		cl_uint iptrlen = 0;
-		struct wc_per_device *wcd = &wcu->devices[devindex];
+		struct testmd5_per_device *cpd = &cuser->devices[devindex];
 		const cl_uchar *input = (const cl_uchar *)gdata->ptr;
-		input += sizeof(wcu->workitems);
-		iptrlen = gdata->len - sizeof(wcu->workitems);
+		input += sizeof(cuser->workitems);
+		iptrlen = gdata->len - sizeof(cuser->workitems);
 
 		WC_DEBUG("Start: %"PRIu64" End: %"PRIu64"\n", start, end);
-		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->input_mem, CL_FALSE, 0,
+		rc = clEnqueueWriteBuffer(dev->cmdq, cpd->input_mem, CL_FALSE, 0,
 				iptrlen, input, 0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
-		rc = clEnqueueWriteBuffer(dev->cmdq, wcd->inputlen_mem, CL_FALSE, 0,
-				sizeof(cl_uint) * wcu->workitems, wcu->input_len, 0, NULL, NULL);
+		rc = clEnqueueWriteBuffer(dev->cmdq, cpd->inputlen_mem, CL_FALSE, 0,
+				sizeof(cl_uint) * cuser->workitems, cuser->input_len, 0, NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueWriteBuffer, rc);
 		WC_INFO("Global work size: %"PRIu64"\n", (uint64_t)global_work_size);
-		rc = clEnqueueNDRangeKernel(dev->cmdq, wcd->kernel, workdim,
+		rc = clEnqueueNDRangeKernel(dev->cmdq, cpd->kernel, workdim,
 				&global_work_offset, &global_work_size, &local_work_size, 0,
 				NULL, NULL);
 		WC_ERROR_OPENCL_BREAK(clEnqueueNDRangeKernel, rc);
-		rc = clEnqueueReadBuffer(dev->cmdq, wcd->digest_mem, CL_FALSE, 0,
-				sizeof(cl_uchar16) * wcu->workitems, wcu->digest, 0, NULL,
+		rc = clEnqueueReadBuffer(dev->cmdq, cpd->digest_mem, CL_FALSE, 0,
+				sizeof(cl_uchar16) * cuser->workitems, cuser->digest, 0, NULL,
 				outevent);
 		WC_ERROR_OPENCL_BREAK(clEnqueueReadBuffer, rc);
 	} while (0);
@@ -428,10 +428,10 @@ wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 								wc_data_t *results)
 {
 	cl_int rc = CL_SUCCESS;
-	struct wc_user *wcu = (struct wc_user *)user;
-	if (!wc || !dev || !wcu || !gdata || !gdata->ptr || !results)
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	if (!wc || !dev || !cuser || !gdata || !gdata->ptr || !results)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices || !wcu->input_len)
+	if (!cuser->devices || devindex >= cuser->num_devices || !cuser->input_len)
 		return WC_EXE_ERR_BAD_STATE;
 	if (results) {
 		results->ptr = NULL;
@@ -441,12 +441,12 @@ wc_err_t testmd5_on_device_range_done(const wc_exec_t *wc, wc_cldev_t *dev,
 		uint32_t jdx;
 		const int maxblocksz = MAX_BLOCK_LEN;
 		const cl_uchar *input = (const cl_uchar *)gdata->ptr;
-		input += sizeof(wcu->workitems);
-		for (jdx = 0; jdx < wcu->workitems; ++jdx) {
+		input += sizeof(cuser->workitems);
+		for (jdx = 0; jdx < cuser->workitems; ++jdx) {
 			cl_uchar md[MD5_DIGEST_LENGTH];
 			memset(md, 0, sizeof(md));
-			MD5(&input[jdx * maxblocksz], wcu->input_len[jdx], md);
-			if (wc_md5_compare(md, &wcu->digest[jdx])) {
+			MD5(&input[jdx * maxblocksz], cuser->input_len[jdx], md);
+			if (testmd5_compare(md, &cuser->digest[jdx])) {
 				break;
 			}
 		}
@@ -459,22 +459,22 @@ wc_err_t testmd5_on_device_finish(const wc_exec_t *wc, wc_cldev_t *dev,
 								const wc_data_t *gdata)
 {
 	cl_int rc = CL_SUCCESS;
-	struct wc_user *wcu = (struct wc_user *)user;
-	struct wc_per_device *wcd = NULL;
-	if (!wc || !dev || !wcu)
+	testmd5_user_t *cuser = (testmd5_user_t *)user;
+	struct testmd5_per_device *cpd = NULL;
+	if (!wc || !dev || !cuser)
 		return WC_EXE_ERR_INVALID_PARAMETER;
-	if (!wcu->devices || devindex >= wcu->num_devices)
+	if (!cuser->devices || devindex >= cuser->num_devices)
 		return WC_EXE_ERR_BAD_STATE;
-	wcd = &wcu->devices[devindex];
-	if (wcd->kernel)
-		rc |= clReleaseKernel(wcd->kernel);
-	if (wcd->input_mem)
-		rc |= clReleaseMemObject(wcd->input_mem);
-	if (wcd->inputlen_mem)
-		rc |= clReleaseMemObject(wcd->inputlen_mem);
-	if (wcd->digest_mem)
-		rc |= clReleaseMemObject(wcd->digest_mem);
-	memset(wcd, 0, sizeof(*wcd));
+	cpd = &cuser->devices[devindex];
+	if (cpd->kernel)
+		rc |= clReleaseKernel(cpd->kernel);
+	if (cpd->input_mem)
+		rc |= clReleaseMemObject(cpd->input_mem);
+	if (cpd->inputlen_mem)
+		rc |= clReleaseMemObject(cpd->inputlen_mem);
+	if (cpd->digest_mem)
+		rc |= clReleaseMemObject(cpd->digest_mem);
+	memset(cpd, 0, sizeof(*cpd));
 	return (rc != CL_SUCCESS) ? WC_EXE_ERR_OPENCL : WC_EXE_OK;
 }
 
@@ -486,7 +486,7 @@ void testmd5_progress(float percent, void *user)
 int main(int argc, char **argv)
 {
 	wc_err_t err = WC_EXE_OK;
-	struct wc_user user;
+	testmd5_user_t user;
 	wc_exec_t *wc = NULL;
 	wc_exec_callbacks_t callbacks;
 	// print license
@@ -501,7 +501,7 @@ int main(int argc, char **argv)
 		// if we are the main application, then we parse the arguments
 		if (wc_executor_system_id(wc) == 0) {
 			// parse actual commandline arguments
-			if (wc_user_parse(argc, argv, &user) < 0) {
+			if (testmd5_user_parse(argc, argv, &user) < 0) {
 				WC_ERROR("Unable to parse arguments.\n");
 				return -1;
 			}
@@ -543,6 +543,6 @@ int main(int argc, char **argv)
 		}
 	} while (0);
 	wc_executor_destroy(wc);
-	wc_user_cleanup(&user);
+	testmd5_user_cleanup(&user);
 	return (int)err;
 }

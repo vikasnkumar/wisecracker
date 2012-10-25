@@ -34,6 +34,17 @@ static unsigned char wc_md5_cl_code[] = {
 static const size_t wc_md5_cl_codelen = sizeof(wc_md5_cl_code);
 const char *wc_md5_cl_kernel = "wc_md5sum_check";
 
+static const unsigned char wc_md5_decoder[0x80] = {
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
+};
+
 typedef struct {
 	char *cl_filename;
 	uint32_t max_devices;
@@ -76,7 +87,7 @@ typedef struct {
 	int system_id;
 } crackmd5_results_t;
 
-int wc_user_usage(const char *app)
+int crackmd5_user_usage(const char *app)
 {
 	printf("\nUsage: %s [OPTIONS]\n", app);
 	printf("\nOPTIONS are as follows:\n");
@@ -104,7 +115,7 @@ int wc_user_usage(const char *app)
 	exit(1);
 }
 
-int wc_user_parse(int argc, char **argv, crackmd5_user_t *user)
+int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
 {
 	int opt = -1;
 	int rc = 0;
@@ -172,20 +183,20 @@ int wc_user_parse(int argc, char **argv, crackmd5_user_t *user)
 			break;
 		case 'h':
 		default:
-			wc_user_usage(appname);
+			crackmd5_user_usage(appname);
 			break;
 		}
 	}
 	if (!user->md5sum) {
 		WC_NULL("\n");
 		WC_ERROR("You need to provide an MD5 sum to crack.\n");
-		wc_user_usage(argv[0]);
+		crackmd5_user_usage(argv[0]);
 		rc = -1;
 	}
 	return rc;
 }
 
-void wc_user_dump(const crackmd5_user_t *user)
+void crackmd5_user_dump(const crackmd5_user_t *user)
 {
 	if (user) {
 		if (user->cl_filename)
@@ -207,7 +218,7 @@ void wc_user_dump(const crackmd5_user_t *user)
 	}
 }
 
-void wc_user_cleanup(crackmd5_user_t *user)
+void crackmd5_user_cleanup(crackmd5_user_t *user)
 {
 	if (user) {
 		WC_FREE(user->cl_filename);
@@ -216,17 +227,6 @@ void wc_user_cleanup(crackmd5_user_t *user)
 		WC_FREE(user->devices);
 	}
 }
-
-static const unsigned char wc_md5_decoder[0x80] = {
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, -1, -1, -1, -1, -1, -1,
-	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, 10, 11, 12, 13, 14, 15, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-	-1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
-};
 
 uint64_t crackmd5_possibilities(wc_util_charset_t chs, uint8_t nchars)
 {
@@ -645,11 +645,11 @@ int main(int argc, char **argv)
 		wc_util_timeofday(&tv1);
 		memset(&user, 0, sizeof(user));
 		if (wc_executor_system_id(wc) == 0) {
-			if (wc_user_parse(argc, argv, &user) < 0) {
+			if (crackmd5_user_parse(argc, argv, &user) < 0) {
 				WC_ERROR("Unable to parse arguments.\n");
 				return -1;
 			}
-			wc_user_dump(&user);
+			crackmd5_user_dump(&user);
 		}
 		// set up the callbacks for distribution
 		memset(&callbacks, 0, sizeof(callbacks));
@@ -700,6 +700,6 @@ int main(int argc, char **argv)
 		}
 	} while (0);
 	wc_executor_destroy(wc);
-	wc_user_cleanup(&user);
+	crackmd5_user_cleanup(&user);
 	return (int)err;
 }
