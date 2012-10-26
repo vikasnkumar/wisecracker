@@ -515,6 +515,15 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 				break;
 			}
 			WC_DEBUG("Sent num tasks as %"PRIu64"\n", wc->num_tasks);
+			err = wc_mpi_broadcast(&wc->task_range_multiplier, 1, MPI_UNSIGNED,
+								wc->system_id);
+			if (err < 0) {
+				WC_ERROR("Unable to send task range multiplier to slaves. "
+						"MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+			WC_DEBUG("Sent task range multiplier as %u\n", wc->task_range_multiplier);
 			err = wc_mpi_scatter(wc->task_ranges, 2,
 						MPI_UNSIGNED_LONG_LONG, wc->my_task_range, 2,
 						MPI_UNSIGNED_LONG_LONG, wc->system_id);
@@ -647,6 +656,16 @@ static wc_err_t wc_executor_slave_pre_run(wc_exec_t *wc)
 				break;
 			}
 			WC_DEBUG("Received num tasks as %"PRIu64"\n", wc->num_tasks);
+			err = wc_mpi_broadcast(&wc->task_range_multiplier, 1, MPI_UNSIGNED,
+									0);
+			if (err < 0) {
+				WC_ERROR("Unable to get task range multiplier from master. "
+						"MPI Error: %d\n", err);
+				rc = WC_EXE_ERR_MPI;
+				break;
+			}
+			WC_DEBUG("Received task range multiplier as %u\n",
+					wc->task_range_multiplier);
 			err = wc_mpi_scatter(wc->task_ranges, 2,
 						MPI_UNSIGNED_LONG_LONG, wc->my_task_range, 2,
 						MPI_UNSIGNED_LONG_LONG, 0);
