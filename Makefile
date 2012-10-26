@@ -26,16 +26,25 @@ ARCH=$(shell uname -m)
 OPENCL_ROOT?=/usr
 CC=$(shell which gcc)
 CXX=$(shell which g++)
+MPICC?=$(shell which mpicc)
 
 RELEASE=
 ifeq ($(RELEASE),1)
-BUILD_TYPE=MinSizeRel
-BUILD_DIR=Release_$(ARCH)
+ BUILD_TYPE=MinSizeRel
+ BUILD_DIR=Release_$(ARCH)
 else
-BUILD_TYPE=Debug
-BUILD_DIR=Debug_$(ARCH)
+ BUILD_TYPE=Debug
+ BUILD_DIR=Debug_$(ARCH)
 endif
 CMAKEBUILDVAR=-DARCH=$(ARCH) -DCMAKE_BUILD_TYPE=$(BUILD_TYPE) -DCMAKE_INSTALL_PREFIX=$(PREFIX)
+
+ifneq ($(MPICC),)
+ CMAKEBUILDVAR+=-DMPI_C_COMPILER=$(MPICC) -DMPI_COMPILER=$(MPICC)
+endif
+
+ifeq ($(CMAKE),)
+ $(error Cannot find cmake. Please install CMake or place it in the path)
+endif
 
 default: all
 .PHONY: default
