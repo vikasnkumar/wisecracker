@@ -698,6 +698,7 @@ int main(int argc, char **argv)
 			WC_ERROR("Unable to crack MD5 sum. Error: %d\n", err);
 			break;
 		} else {
+			// if i am not the root system, break out
 			if (wc_executor_system_id(wc) != 0)
 				break;
 			if (!user.found) {
