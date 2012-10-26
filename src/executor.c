@@ -913,7 +913,8 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 				if (wc->cbs.progress) {
 					double percent = ((double)(100.0 * tasks_completed)) /
 															num_tasks;
-					wc->cbs.progress((float)percent, wc->cbs.user);
+					if (percent < 100.0)
+						wc->cbs.progress((float)percent, wc->cbs.user);
 				}
 				if (rc != WC_EXE_OK)
 					break;
