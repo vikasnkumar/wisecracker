@@ -749,7 +749,7 @@ static wc_err_t wc_executor_device_finish(wc_exec_t *wc)
 static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
-	cl_event *events = NULL;
+	cl_event *device_events = NULL;
 	wc_resultsdata_t *device_results = NULL;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
@@ -758,13 +758,13 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 		rc = wc_executor_device_start(wc);
 		if (rc != WC_EXE_OK)
 			break;
-		events = WC_MALLOC(sizeof(cl_event) * wc->ocl.device_max);
-		if (!events) {
+		device_events = WC_MALLOC(sizeof(cl_event) * wc->ocl.device_max);
+		if (!device_events) {
 			WC_ERROR_OUTOFMEMORY(sizeof(cl_event) * wc->ocl.device_max);
 			rc = WC_EXE_ERR_OUTOFMEMORY;
 			break;
 		}
-		memset(events, 0, sizeof(cl_event) * wc->ocl.device_max);
+		memset(device_events, 0, sizeof(cl_event) * wc->ocl.device_max);
 		ressize = sizeof(wc_resultsdata_t) * wc->ocl.device_max;
 		device_results = WC_MALLOC(ressize);
 		if (!device_results) {
@@ -799,7 +799,7 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 					uint64_t tasks4device;
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
-					events[idx] = (cl_event)0;
+					device_events[idx] = (cl_event)0;
 					tasks4device = dev->workgroup_sz * dev->compute_units *
 									wc->task_range_multiplier;
 					end = start + tasks4device;
@@ -813,7 +813,7 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 					WC_DEBUG("Range: [%"PRIu64", %"PRIu64")\n", start, end);
 					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
 							wc->cbs.user, &wc->globaldata, start, end,
-							&events[idx]);
+							&device_events[idx]);
 					if (rc != WC_EXE_OK) {
 						WC_ERROR("Error occurred while running device work:"
 								" Range(%"PRIu64",%"PRIu64"). Completed(%"PRIu64")\n",
@@ -823,8 +823,9 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 					// Wait for events here
 					// if no events are returned then we don't care and will not
 					// wait for anything
-					if (events[idx]) {
-						if (wc_opencl_event_enqueue_wait(dev, &events[idx], 1,
+					if (device_events[idx]) {
+						if (wc_opencl_event_enqueue_wait(dev,
+									&device_events[idx], 1,
 									wc_executor_device_event_notify, wc) < 0) {
 							rc = WC_EXE_ERR_OPENCL;
 							WC_ERROR("Unable to set wait for event\n");
@@ -858,9 +859,9 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 				wc_opencl_event_release(wc->userevent);
 				wc->userevent = (cl_event)0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-					if (events[idx])
-						wc_opencl_event_release(events[idx]);
-					events[idx] = (cl_event)0;
+					if (device_events[idx])
+						wc_opencl_event_release(device_events[idx]);
+					device_events[idx] = (cl_event)0;
 				}
 				//should we call this on demand @ every event callback or
 				//wait for the collection of events to complete first ?
@@ -931,7 +932,7 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 		if (rc != WC_EXE_OK)
 			break;
 	} while (0);
-	WC_FREE(events);
+	WC_FREE(device_events);
 	WC_FREE(device_results);
 	return rc;
 }
