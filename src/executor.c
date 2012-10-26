@@ -475,12 +475,13 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 		}
 		memset(wc->task_ranges, 0, wc->num_systems * sizeof(uint64_t) * 2);
 		sum_tasks = 0;
+		num_rounds = 0;
 		for (idx = 0; idx < wc->num_systems; ++idx)
 			sum_tasks += wc->all_tasks4system[idx];
 		sum_tasks *= wc->task_range_multiplier;
 		if (sum_tasks >= wc->num_tasks)
 			num_rounds = 1;
-		else
+		else if (sum_tasks > 0)
 			num_rounds = (wc->num_tasks / sum_tasks) +
 						((wc->num_tasks % sum_tasks) ? 1 : 0);
 		if (num_rounds <= 1)
@@ -494,7 +495,7 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 			wc->task_ranges[2 * idx] = start;
 			wc->task_ranges[2 * idx + 1] = end;
 			if (end >= wc->num_tasks) {
-				wc->task_ranges[2 * idx + 1] = wc->num_tasks - start;
+				wc->task_ranges[2 * idx + 1] = wc->num_tasks;
 				break;
 			}
 			start = end;
@@ -910,10 +911,10 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 					WC_FREE(device_results[idx].data.ptr);
 				}
 				// call progress only on master based on tasks completed
-				if (wc->cbs.progress) {
+				if (wc->cbs.progress && num_tasks > 0) {
 					double percent = ((double)(100.0 * tasks_completed)) /
 															num_tasks;
-					if (percent < 100.0)
+					if (percent <= 100.0)
 						wc->cbs.progress((float)percent, wc->cbs.user);
 				}
 				if (rc != WC_EXE_OK)
@@ -1229,9 +1230,10 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 				rc = WC_EXE_OK;
 			}
 			// call progress only on master based on tasks completed
-			if (wc->cbs.progress) {
+			if (wc->cbs.progress && num_tasks > 0) {
 				double percent = ((double)(100.0 * tasks_completed)) / num_tasks;
-				wc->cbs.progress((float)percent, wc->cbs.user);
+				if (percent <= 100.0)
+					wc->cbs.progress((float)percent, wc->cbs.user);
 			}
 		} else {
 			WC_WARN("Received unexpected message for tag (%x) from slave(%d)\n",
