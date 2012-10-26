@@ -612,11 +612,24 @@ wc_err_t crackmd5_on_device_finish(const wc_exec_t *wc, wc_cldev_t *dev,
 }
 
 wc_err_t crackmd5_on_recv_results(const wc_exec_t *wc, void *user,
-					uint64_t start, uint64_t end, const wc_data_t *results)
+					uint64_t start, uint64_t end, wc_err_t slverr,
+					const wc_data_t *results)
 {
+	wc_err_t rc;
 	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	if (!wc || !user || !results || (start > end))
 		return WC_EXE_ERR_INVALID_PARAMETER;
+	if (slverr != WC_EXE_OK && slverr != WC_EXE_STOP) {
+		WC_WARN("For task range (%"PRIu64", %"PRIu64") error: %d\n",
+				start, end, slverr);
+		rc = WC_EXE_OK;
+	} else if (slverr == WC_EXE_STOP) {
+		WC_WARN("For task range (%"PRIu64", %"PRIu64") stop called on slave\n",
+				start, end);
+		rc = WC_EXE_STOP;
+	} else {
+		rc = WC_EXE_OK;
+	}
 	if (results && results->ptr &&
 		results->len == sizeof(crackmd5_results_t)) {
 		crackmd5_results_t *res = (crackmd5_results_t *)results->ptr;
@@ -625,7 +638,7 @@ wc_err_t crackmd5_on_recv_results(const wc_exec_t *wc, void *user,
 		WC_INFO("Found match in %"PRIu64"th kernel call on system %d\n",
 				res->kernelcounter, res->system_id);
 	}
-	return WC_EXE_OK;
+	return rc;
 }
 
 int main(int argc, char **argv)
@@ -685,6 +698,8 @@ int main(int argc, char **argv)
 			WC_ERROR("Unable to crack MD5 sum. Error: %d\n", err);
 			break;
 		} else {
+			if (wc_executor_system_id(wc) != 0)
+				break;
 			if (!user.found) {
 				WC_INFO("Unable to find a match\n");
 			} else {

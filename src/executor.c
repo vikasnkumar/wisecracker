@@ -28,9 +28,8 @@
 
 // for the master-slave MPI communication
 #define WC_TAG_MST_STOP 0x0000CAFE
-#define WC_TAG_SLV_ERRORS 0x0000DEAD
+#define WC_TAG_SLV_COMPLETED 0x000DEAD
 #define WC_TAG_SLV_RESULTS 0x0000BEEF
-#define WC_TAG_SLV_COMPLETED 0x000FACE
 
 enum {
 	WC_EXECSTATE_NOT_STARTED = 0,
@@ -82,6 +81,7 @@ static int wc_mst_loop_breaker = 0; // for the master thread loop
 typedef struct {
 	uint64_t start;
 	uint64_t end;
+	wc_err_t error;
 	wc_data_t data;
 } wc_resultsdata_t;
 
@@ -855,49 +855,51 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 						wc_opencl_event_release(events[idx]);
 					events[idx] = (cl_event)0;
 				}
-				//FIXME; should we call this on demand @ every event callback or
+				//should we call this on demand @ every event callback or
 				//wait for the collection of events to complete first ?
-				if (wc->cbs.on_device_range_done) {
-					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
-						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
-						wc_data_t results = { 0 };
-						wc_err_t slverr = wc->cbs.on_device_range_done(wc, dev,
+				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
+					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
+					wc_data_t results = { 0 };
+					wc_err_t slverr = WC_EXE_OK;
+					if (wc->cbs.on_device_range_done) {
+						slverr = wc->cbs.on_device_range_done(wc, dev,
 								idx, wc->cbs.user, &wc->globaldata,
 								device_ranges[idx].s[0],
 								device_ranges[idx].s[1],
 								&results);
-						//send data back to master and invoke the
-						//on-receive event
-						if (wc->cbs.on_receive_range_results) {
-							wc_err_t msterr = wc->cbs.on_receive_range_results(wc,
-									wc->cbs.user, device_ranges[idx].s[0],
-									device_ranges[idx].s[1], &results);
-							//propagate this stop to slaves
-							if (msterr == WC_EXE_STOP) {
-								WC_INFO("User requested a stop.\n");
-								rc = msterr;
-								break;
-							}
-							if (msterr != WC_EXE_OK) {
-								WC_ERROR("Error occurred in callback\n");
-								rc = WC_EXE_ERR_BAD_STATE;
-								break;
-							}
-						}
-						//propagate this stop to master
-						if (slverr == WC_EXE_STOP) {
+					}
+					//send data back to master and invoke the
+					//on-receive event
+					if (wc->cbs.on_receive_range_results) {
+						wc_err_t msterr = wc->cbs.on_receive_range_results(wc,
+								wc->cbs.user, device_ranges[idx].s[0],
+								device_ranges[idx].s[1], slverr,
+								&results);
+						//propagate this stop to slaves
+						if (msterr == WC_EXE_STOP) {
 							WC_INFO("User requested a stop.\n");
-							rc = slverr;
+							rc = msterr;
 							break;
 						}
-						if (slverr != WC_EXE_OK) {
+						if (msterr != WC_EXE_OK) {
 							WC_ERROR("Error occurred in callback\n");
 							rc = WC_EXE_ERR_BAD_STATE;
 							break;
 						}
-						// do this on both master and slave
-						WC_FREE(results.ptr);
 					}
+					//propagate this stop to master
+					if (slverr == WC_EXE_STOP) {
+						WC_INFO("User requested a stop.\n");
+						rc = slverr;
+						break;
+					}
+					if (slverr != WC_EXE_OK) {
+						WC_ERROR("Error occurred in callback\n");
+						rc = WC_EXE_ERR_BAD_STATE;
+						break;
+					}
+					// do this on both master and slave
+					WC_FREE(results.ptr);
 				}
 				// call progress only on master based on tasks completed
 				if (wc->cbs.progress) {
@@ -941,6 +943,7 @@ static wc_err_t wc_resultsdata_serialize(const wc_resultsdata_t *res,
 		for (idx = 0; idx < count; ++idx) {
 			sendcount += sizeof(res[idx].start);
 			sendcount += sizeof(res[idx].end);
+			sendcount += sizeof(res[idx].error);
 			sendcount += sizeof(res[idx].data.len);
 			sendcount += res[idx].data.len;
 		}
@@ -959,6 +962,8 @@ static wc_err_t wc_resultsdata_serialize(const wc_resultsdata_t *res,
 			ptr += sizeof(res[idx].start);
 			memcpy(ptr, &res[idx].end, sizeof(res[idx].end));
 			ptr += sizeof(res[idx].end);
+			memcpy(ptr, &res[idx].error, sizeof(res[idx].error));
+			ptr += sizeof(res[idx].error);
 			memcpy(ptr, &res[idx].data.len, sizeof(res[idx].data.len));
 			ptr += sizeof(res[idx].data.len);
 			if (res[idx].data.ptr && res[idx].data.len > 0) {
@@ -1012,6 +1017,11 @@ static wc_resultsdata_t *wc_resultsdata_deserialize(const wc_data_t *data,
 			usecount += sizeof(res[idx].end);
 			if (usecount > data->len)
 				break;
+			memcpy(&res[idx].error, ptr, sizeof(res[idx].error));
+			ptr += sizeof(res[idx].error);
+			usecount += sizeof(res[idx].error);
+			if (usecount > data->len)
+				break;
 			memcpy(&res[idx].data.len, ptr, sizeof(res[idx].data.len));
 			ptr += sizeof(res[idx].data.len);
 			usecount += sizeof(res[idx].data.len);
@@ -1042,34 +1052,56 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 {
 	wc_err_t rc = WC_EXE_OK;
 	wc_exec_t *wc = (wc_exec_t *)arg;
-	wc_err_t stoprc = WC_EXE_STOP;
-	wc_mpirequest_t *requests = NULL;
+	wc_mpirequest_t *stoppings = NULL;
+	wc_mpirequest_t *completions = NULL;
 	int num_systems = 0;
 	int slave_stop_received = 0;
 	int master_stop_received = 0;
 	uint64_t tasks_completed = 0;
 	uint64_t num_tasks = 0;
 	int *slaves_completed = NULL;
+	int sdx;
+	int completed_systems = 0;
 	num_systems = wc_executor_num_systems(wc);
 	if (!wc || num_systems <= 0) {
 		WC_ERROR("Thread argument was invalid\n");
 		return (WC_THREAD_RETURN)0;
 	}
 	// at a time we can send only num_systems requests
-	requests = WC_MALLOC(sizeof(wc_mpirequest_t) * num_systems);
-	if (!requests) {
+	stoppings = WC_MALLOC(sizeof(wc_mpirequest_t) * num_systems);
+	if (!stoppings) {
 		WC_ERROR_OUTOFMEMORY(sizeof(wc_mpirequest_t) * num_systems);
 		return (WC_THREAD_RETURN)0;
 	}
-	memset(requests, 0, sizeof(wc_mpirequest_t) * num_systems);
+	memset(stoppings, 0, sizeof(wc_mpirequest_t) * num_systems);
+	completions = WC_MALLOC(sizeof(wc_mpirequest_t) * num_systems);
+	if (!completions) {
+		WC_FREE(stoppings);
+		WC_ERROR_OUTOFMEMORY(sizeof(wc_mpirequest_t) * num_systems);
+		return (WC_THREAD_RETURN)0;
+	}
+	memset(completions, 0, sizeof(wc_mpirequest_t) * num_systems);
 	slaves_completed = WC_MALLOC(sizeof(int) * num_systems);
 	if (!slaves_completed) {
-		WC_FREE(requests);
+		WC_FREE(stoppings);
+		WC_FREE(completions);
 		WC_ERROR_OUTOFMEMORY(sizeof(int) * num_systems);
 		return (WC_THREAD_RETURN)0;
 	}
 	memset(slaves_completed, 0, sizeof(int) * num_systems);
 	num_tasks = wc->num_tasks;
+	// wait for slave completes
+	completed_systems = 0;
+	for (sdx = 0; sdx < num_systems; ++sdx) {
+		slaves_completed[sdx] = 0;
+		if (wc_mpi_irecv(&slaves_completed[sdx], 1, MPI_INT, sdx,
+					WC_TAG_SLV_COMPLETED, &completions[sdx]) < 0) {
+			WC_WARN("Unable to recv slave completion for slave: %d\n", sdx);
+			//ignore this error for this slave
+			slaves_completed[sdx] = 1;
+			completed_systems++;
+		}
+	}
 	while (!wc_mst_loop_breaker) {
 		int flag = 0;
 		wc_mpistatus_t status = { 0 };
@@ -1085,6 +1117,26 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 		// we send the stop message as soon as we receive the error information
 		// and then receive the rest of the data before breaking out ourselves
 		// from the loop.
+		for (sdx = 0; sdx < num_systems && completed_systems < num_systems;
+			++sdx) {
+			if (slaves_completed[sdx] == 0) {
+				flag = 0;
+				if (wc_mpi_test(&completions[sdx], &flag) < 0) {
+					WC_WARN("unable to test for completion of slave: %d\n",
+							sdx);
+				} else {
+					if (flag != 0) {
+						slaves_completed[sdx] = 1;
+						completed_systems++;
+						WC_DEBUG("Received slave completed message from %d\n",
+								sdx);
+					}
+				}
+			}
+		}
+		if (completed_systems >= num_systems)
+			break;
+		flag = 0;
 		if (wc_mpi_iprobe(MPI_ANY_SOURCE, MPI_ANY_TAG, &flag, &status) < 0) {
 			WC_ERROR("Probe failed for slave data\n");
 			rc = WC_EXE_ERR_MPI;
@@ -1093,56 +1145,16 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 		if (flag == 0)
 			continue;
 		// ok we have one slave sending us data, let's get it
-		if (status.MPI_TAG == WC_TAG_SLV_ERRORS) {
-			int slverrcount = 0;
-			wc_err_t *slverrors = NULL;
-			// get count and then get data
-			if (wc_mpi_get_count(&status, MPI_INT, &slverrcount) < 0) {
-				WC_ERROR("Get count failed for slave error from slave: %d\n",
-						status.MPI_SOURCE);
-				rc = WC_EXE_ERR_MPI;
-				break;
-			}
-			if (slverrcount > 0) {
-				int idx;
-				slverrors = WC_MALLOC(sizeof(wc_err_t) * slverrcount);
-				if (!slverrors) {
-					WC_ERROR_OUTOFMEMORY(sizeof(wc_err_t) * slverrcount);
-					rc = WC_EXE_ERR_OUTOFMEMORY;
-					break;
-				}
-				memset(slverrors, 0, sizeof(wc_err_t) * slverrcount);
-				if (wc_mpi_recv(slverrors, slverrcount, MPI_INT,
-								status.MPI_SOURCE, status.MPI_TAG) < 0) {
-					WC_ERROR("Recv failed for slave error from slave: %d\n",
-							status.MPI_SOURCE);
-					WC_FREE(slverrors); // free the memory
-					rc = WC_EXE_ERR_MPI;
-					break;
-				}
-				// we got the errors and let's check for WC_EXE_STOPs
-				for (idx = 0; idx < slverrcount; ++idx) {
-					if (slverrors[idx] == WC_EXE_STOP) {
-						WC_INFO("Received stop from slave: %d\n",
-								status.MPI_SOURCE);
-						slave_stop_received = 1;
-						break;
-					} else if (slverrors[idx] != WC_EXE_OK) {
-						WC_WARN("Received error(%d) from slave: %d\n",
-								slverrors[idx], status.MPI_SOURCE);
-					}
-				}
-				WC_FREE(slverrors);
-				rc = WC_EXE_OK;
-			}
-		} else if (status.MPI_TAG == WC_TAG_SLV_RESULTS) {
+		if (status.MPI_TAG == WC_TAG_SLV_RESULTS) {
 			int recvlen = 0;
+			WC_DEBUG("Got slave results from %d\n", status.MPI_SOURCE);
 			// get count and then get data
 			if (wc_mpi_get_count(&status, MPI_BYTE, &recvlen) < 0) {
 				WC_ERROR("Get count failed for slave results\n");
 				rc = WC_EXE_ERR_MPI;
 				break;
 			}
+			WC_DEBUG("Got slave result data buffer len: %d\n", recvlen);
 			if (recvlen > 0) {
 				wc_data_t recvdata = { 0 };
 				wc_resultsdata_t *results = NULL;
@@ -1169,11 +1181,13 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 				results = wc_resultsdata_deserialize(&recvdata, &rescount);
 				if (results) {
 					size_t idx = 0;
+					WC_DEBUG("Got slave results list count: %lu\n", rescount);
 					for (idx = 0; idx < rescount; ++idx) {
 						if (wc->cbs.on_receive_range_results) {
 							wc_err_t merr = wc->cbs.on_receive_range_results(wc,
 									wc->cbs.user, results[idx].start,
-									results[idx].end, &results[idx].data);
+									results[idx].end, results[idx].error,
+									&results[idx].data);
 							tasks_completed += results[idx].end -
 								results[idx].start;
 							if (merr == WC_EXE_STOP) {
@@ -1186,6 +1200,11 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 								rc = WC_EXE_ERR_BAD_STATE;
 								break;
 							}
+						}
+						if (results[idx].error == WC_EXE_STOP) {
+							WC_INFO("Slave side stop requested\n");
+							slave_stop_received = 1;
+							break;
 						}
 					}
 					// free all the memory
@@ -1205,17 +1224,8 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 				double percent = ((double)(100.0 * tasks_completed)) / num_tasks;
 				wc->cbs.progress((float)percent, wc->cbs.user);
 			}
-		} else if (status.MPI_TAG == WC_TAG_SLV_COMPLETED) {
-			int completion = 0;
-			if (wc_mpi_recv(&completion, 1, MPI_INT,
-						status.MPI_SOURCE, status.MPI_TAG) < 0) {
-				WC_WARN("Recv failed for slave completion from slave: %d\n",
-						status.MPI_SOURCE);
-			}
-			if (status.MPI_SOURCE < num_systems && status.MPI_SOURCE >= 0)
-				slaves_completed[status.MPI_SOURCE] = 1;
 		} else {
-			WC_WARN("Received unexpected message for tag (%d) from slave(%d)\n",
+			WC_WARN("Received unexpected message for tag (%x) from slave(%d)\n",
 					status.MPI_TAG, status.MPI_SOURCE);
 		}
 		if (tasks_completed >= num_tasks) {
@@ -1229,12 +1239,12 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 		if (slave_stop_received || master_stop_received) {
 			int idx;
 			int rdx = 0;
-			stoprc = WC_EXE_STOP;
+			wc_err_t stoprc = WC_EXE_STOP;
 			for (idx = 0; idx < num_systems; ++idx) {
 				if (slaves_completed[idx] == 1)
 					continue;
 				if (wc_mpi_isend(&stoprc, 1, MPI_INT, idx,
-							WC_TAG_MST_STOP, &requests[rdx++]) < 0) {
+							WC_TAG_MST_STOP, &stoppings[rdx++]) < 0) {
 					WC_WARN("Unable to send slave stop to slave: %d\n",
 							idx);
 					//ignore this error
@@ -1242,14 +1252,15 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 			}
 			WC_DEBUG("Waiting for all slaves to receive the stop before"
 					" exiting\n");
-			if (rdx > 0 && wc_mpi_waitall(rdx, requests) < 0) {
+			if (rdx > 0 && wc_mpi_waitall(rdx, stoppings) < 0) {
 				WC_WARN("error in waiting for slaves to receive stop\n");
 			}
 			rc = WC_EXE_STOP;
 			break;
 		}
 	}
-	WC_FREE(requests);
+	WC_FREE(stoppings);
+	WC_FREE(completions);
 	WC_FREE(slaves_completed);
 	// abort the MPI Run if there was a problem here
 	if (rc != WC_EXE_OK && rc != WC_EXE_STOP)
@@ -1299,31 +1310,27 @@ static wc_err_t wc_executor_slave_check_stop()
 static wc_err_t wc_executor_slave_system_run(wc_exec_t *wc)
 {
 #undef LOCAL_MALLOC_DEVICE_ARRAY
-#define LOCAL_MALLOC_DEVICE_ARRAY(PTR,TYPE,MUL) \
+#define LOCAL_MALLOC_DEVICE_ARRAY(PTR,TYPE) \
 do { \
-	(PTR) = WC_MALLOC(sizeof(TYPE) * wc->ocl.device_max * (MUL)); \
+	(PTR) = WC_MALLOC(sizeof(TYPE) * wc->ocl.device_max); \
 	if ((PTR) == NULL) { \
-		WC_ERROR_OUTOFMEMORY(sizeof(TYPE) * wc->ocl.device_max * (MUL)); \
+		WC_ERROR_OUTOFMEMORY(sizeof(TYPE) * wc->ocl.device_max); \
 		rc = WC_EXE_ERR_OUTOFMEMORY; \
 		break; \
 	} \
-	memset((PTR), 0, sizeof(TYPE) * wc->ocl.device_max * (MUL)); \
+	memset((PTR), 0, sizeof(TYPE) * wc->ocl.device_max); \
 	rc = WC_EXE_OK; \
 } while (0)
 	wc_err_t rc = WC_EXE_OK;
 	cl_event *device_events = NULL;
-	wc_err_t *device_errs = NULL;
 	wc_resultsdata_t *device_results = NULL;
 	if (!wc)
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	do {
-		LOCAL_MALLOC_DEVICE_ARRAY(device_events, cl_event, 1);
+		LOCAL_MALLOC_DEVICE_ARRAY(device_events, cl_event);
 		if (rc != WC_EXE_OK)
 			break;
-		LOCAL_MALLOC_DEVICE_ARRAY(device_errs, wc_err_t, 1);
-		if (rc != WC_EXE_OK)
-			break;
-		LOCAL_MALLOC_DEVICE_ARRAY(device_results, wc_resultsdata_t, 1);
+		LOCAL_MALLOC_DEVICE_ARRAY(device_results, wc_resultsdata_t);
 		if (rc != WC_EXE_OK)
 			break;
 		rc = wc_executor_device_start(wc);
@@ -1364,6 +1371,7 @@ do { \
 					// copy start and end into device_results
 					device_results[idx].start = start;
 					device_results[idx].end = end;
+					device_results[idx].error = WC_EXE_OK;
 					device_results[idx].data.ptr = NULL;
 					device_results[idx].data.len = 0;
 					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
@@ -1422,9 +1430,6 @@ do { \
 				// invoking this for every range
 				do {
 					wc_data_t senddata = { 0 };
-					// minimum is 2. we just use this here
-					wc_mpirequest_t requests[2];
-					memset(requests, 0, sizeof(requests));
 					for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 						wc_cldev_t *dev = &(wc->ocl.devices[idx]);
 						// zero out the ptr,len parts for cleanliness
@@ -1434,21 +1439,15 @@ do { \
 						// but we still send the range back to the master
 						// to track how much is done
 						if (wc->cbs.on_device_range_done) {
-							device_errs[idx] = wc->cbs.on_device_range_done(wc,
+							device_results[idx].error =
+									wc->cbs.on_device_range_done(wc,
 									dev, idx, wc->cbs.user, &wc->globaldata,
 									device_results[idx].start,
 									device_results[idx].end,
 									&device_results[idx].data);
 						} else {
-							device_errs[idx] = WC_EXE_OK;
+							device_results[idx].error = WC_EXE_OK;
 						}
-					}
-					// send the errors from this range
-					if (wc_mpi_isend(device_errs, wc->ocl.device_max, MPI_INT,
-							0, WC_TAG_SLV_ERRORS, &requests[0]) < 0) {
-						WC_ERROR("Error in sending device error codes\n");
-						rc = WC_EXE_ERR_MPI;
-						break;
 					}
 					// first serialize the data into 1 buffer
 					// as opposed to using multiple buffers of varying lengths
@@ -1462,17 +1461,12 @@ do { \
 					}
 					memset(device_results, 0, sizeof(wc_resultsdata_t) *
 												wc->ocl.device_max);
-					// send the results for this range
-					if (wc_mpi_isend(senddata.ptr, senddata.len, MPI_BYTE, 0,
-								WC_TAG_SLV_RESULTS, &requests[1]) < 0) {
+					// send the results for this range synchronously
+					if (wc_mpi_send(senddata.ptr, senddata.len, MPI_BYTE, 0,
+								WC_TAG_SLV_RESULTS) < 0) {
 						WC_ERROR("Error in sending device results\n");
 						rc = WC_EXE_ERR_MPI;
 						break;
-					}
-					// wait for all the events to complete before moving on
-					if (wc_mpi_waitall(2, requests) < 0) {
-						WC_ERROR("Error in waiting for all send events\n");
-						rc = WC_EXE_ERR_MPI;
 					}
 					// free the results send buffer and then break;
 					WC_FREE(senddata.ptr);
@@ -1503,8 +1497,9 @@ do { \
 			break;
 	} while (0);
 	WC_FREE(device_events);
-	WC_FREE(device_errs);
 	WC_FREE(device_results);
+	if (rc == WC_EXE_STOP)
+		rc = WC_EXE_OK;
 	return rc;
 #undef LOCAL_MALLOC_DEVICE_ARRAY
 }
@@ -1523,6 +1518,8 @@ static wc_err_t wc_executor_master_system_run(wc_exec_t *wc)
 	wc_mst_loop_breaker = 1;
 	if (thread)
 		WC_THREAD_JOIN(&thread);
+	if (rc == WC_EXE_STOP)
+		rc = WC_EXE_OK;
 	return rc;
 }
 
@@ -1559,6 +1556,7 @@ wc_err_t wc_executor_run(wc_exec_t *wc)
 		rc |= wc_executor_post_run(wc);
 		if (rc != WC_EXE_OK)
 			break;
+		WC_INFO("End of run achieved on system %d\n", wc->system_id);
 	} while (0);
 	return rc;
 }

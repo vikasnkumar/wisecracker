@@ -99,7 +99,8 @@ typedef struct {
 						uint32_t devindex, void *user, const wc_data_t *gdata,
 						uint64_t start, uint64_t end, wc_data_t *results);
 	wc_err_t (*on_receive_range_results)(const wc_exec_t *wc, void *user,
-						uint64_t start, uint64_t end, const wc_data_t *results);
+						uint64_t start, uint64_t end, wc_err_t slverr,
+						const wc_data_t *results);
 	void (*free_global_data)(const wc_exec_t *wc, void *user,
 						wc_data_t *gdata);
 	void (*progress)(float percent, void *user);
