@@ -974,7 +974,7 @@ static wc_err_t wc_resultsdata_serialize(const wc_resultsdata_t *res,
 	} while (0);
 	if (out) {
 		out->ptr = sendbuf;
-		out->len = sendcount;
+		out->len = (uint32_t)sendcount;
 	}
 	return rc;
 }
