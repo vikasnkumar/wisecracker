@@ -93,6 +93,11 @@ int crackmd5_user_usage(const char *app)
 	printf("\nUsage: %s [OPTIONS]\n", app);
 	printf("\nOPTIONS are as follows:\n");
 	printf("\n\t-h\t\tThis help message\n");
+	printf("\n\t-v <value>\tLog level:\n"
+			"\t\t\t0 - ERROR\n"
+			"\t\t\t1 - WARN\n"
+			"\t\t\t2 - INFO\n"
+			"\t\t\t3 - DEBUG (Default)\n");
 	printf("\n\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
 	printf("\n\t-m <value>\tMaximum devices to use, 0 (default) for all.\n");
 	printf("\n\t-c\t\tUse CPU only if available. Default any.\n");
@@ -135,10 +140,11 @@ int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
 	int opt = -1;
 	int rc = 0;
 	const char *appname = NULL;
+	int loglevel = WC_LOGLEVEL_DEBUG;
 	if (!argv || !user)
 		return -1;
 	appname = WC_BASENAME(argv[0]);
-	while ((opt = getopt(argc, argv, "hgcm:f:M:p:C:N:")) != -1) {
+	while ((opt = getopt(argc, argv, "hgcm:f:M:p:C:N:v:")) != -1) {
 		switch (opt) {
 		case 'f':
 			user->cl_filename = wc_util_strdup(optarg);
@@ -188,6 +194,14 @@ int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
 						appname);
 				rc = -1;
 			}
+			break;
+		case 'v':
+			loglevel = (int)strtol(optarg, NULL, 10);
+			if (loglevel > WC_LOGLEVEL_DEBUG)
+				loglevel = WC_LOGLEVEL_DEBUG;
+			else if (loglevel < WC_LOGLEVEL_ERROR)
+				loglevel = WC_LOGLEVEL_ERROR;
+			WC_SET_LOG_LEVEL(loglevel);
 			break;
 		case 'h':
 		default:

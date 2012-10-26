@@ -24,26 +24,40 @@
 #ifndef __WISECRACKER_MACROS_H__
 #define __WISECRACKER_MACROS_H__
 
+EXTERN_C_BEGIN
+	enum {
+		WC_LOGLEVEL_ERROR,
+		WC_LOGLEVEL_WARN,
+		WC_LOGLEVEL_INFO,
+		WC_LOGLEVEL_DEBUG
+	};
+	extern volatile int wc_log_level; // defined in utils.c
+EXTERN_C_END
+#define WC_SET_LOG_LEVEL(val) wc_log_level = (val)
 #define WC_NULL(...) fprintf(stderr, __VA_ARGS__)
 #define WC_DEBUG(...) \
 do { \
+	if (wc_log_level < WC_LOGLEVEL_DEBUG) break; \
 	fprintf(stderr, "[%s:%d] DEBUG: ", __func__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__); \
 } while (0)
 #define WC_INFO(...) \
 do { \
+	if (wc_log_level < WC_LOGLEVEL_INFO) break; \
 	fprintf(stderr, "[%s:%d] INFO: ", __func__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__); \
 } while (0)
 
 #define WC_WARN(...) \
 do { \
+	if (wc_log_level < WC_LOGLEVEL_WARN) break; \
 	fprintf(stderr, "[%s:%d] WARN: ", __func__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__); \
 } while (0)
 
 #define WC_ERROR(...) \
 do { \
+	if (wc_log_level < WC_LOGLEVEL_ERROR) break; \
 	fprintf(stderr, "[%s:%d] ERROR: ", __func__, __LINE__); \
 	fprintf(stderr, __VA_ARGS__); \
 } while (0)

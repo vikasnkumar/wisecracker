@@ -23,6 +23,8 @@
  */
 #include <wisecracker.h>
 
+volatile int wc_log_level = WC_LOGLEVEL_DEBUG;
+
 int wc_util_glob_file(const char *filename, unsigned char **outdata,
 					size_t *outlen)
 {
