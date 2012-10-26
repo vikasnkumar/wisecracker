@@ -407,7 +407,7 @@ uint32_t crackmd5_get_multiplier(const wc_exec_t *wc, void *user)
 {
 	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	if (cuser)
-		return (uint32_t)wc_util_charset_size(cuser->charset);
+		return (uint32_t)wc_util_charset_size(cuser->charset) * 32;
 	return 1;
 }
 
@@ -507,9 +507,13 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		if ((cpd->work_offset + cpd->work_size) >= offset_limit) {
 			WC_DEBUG("Work offset: %"PRIu64" size: %"PRIu64" for device[%u]\n",
 					(uint64_t)cpd->work_offset, (uint64_t)cpd->work_size, devindex);
-			cpd->stride += offset_limit;
-			cpd->work_offset = cpd->work_offset + cpd->work_size -
-								offset_limit;
+			// this is more efficient rather than using the offset
+			cpd->stride = cpd->work_offset;
+			cpd->work_offset = 0;
+//			while ((cpd->work_offset + cpd->work_size) >= offset_limit) {
+//				cpd->stride += offset_limit;
+//				cpd->work_offset = cpd->work_offset + cpd->work_size - offset_limit;
+//			}
 			rc |= clSetKernelArg(cpd->kernel, cpd->stride_argc,
 					sizeof(cl_ulong), &cpd->stride);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
