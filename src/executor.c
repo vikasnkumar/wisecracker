@@ -778,13 +778,15 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 			uint64_t tasks_completed = 0;
 			uint32_t idx;
 			uint64_t num_tasks = 0;
+			uint64_t start, end;
 
 			tasks_completed = 0;
 			num_tasks = wc->my_task_range[1] - wc->my_task_range[0];
 			if (num_tasks == 0)
 				break;
+			start = wc->my_task_range[0];
+			end = 0;
 			do {
-				uint64_t start, end;
 				rc = WC_EXE_OK;
 				wc->refcount = 0;
 				wc->userevent = (cl_event)0;
@@ -794,8 +796,6 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 					WC_WARN("User event failed to create. Shaky state\n");
 					break;
 				}
-				start = wc->my_task_range[0];
-				end = 0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 					uint64_t tasks4device;
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
@@ -810,6 +810,7 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 					device_results[idx].error = WC_EXE_OK;
 					device_results[idx].data.ptr = NULL;
 					device_results[idx].data.len = 0;
+					WC_DEBUG("Range: [%"PRIu64", %"PRIu64")\n", start, end);
 					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
 							wc->cbs.user, &wc->globaldata, start, end,
 							&events[idx]);
@@ -914,8 +915,8 @@ static wc_err_t wc_executor_single_system_run(wc_exec_t *wc)
 				if (wc->cbs.progress && num_tasks > 0) {
 					double percent = ((double)(100.0 * tasks_completed)) /
 															num_tasks;
-					if (percent <= 100.0)
-						wc->cbs.progress((float)percent, wc->cbs.user);
+					percent = (percent > 100.0) ? 100.0 : percent;
+					wc->cbs.progress((float)percent, wc->cbs.user);
 				}
 				if (rc != WC_EXE_OK)
 					break;
@@ -1232,8 +1233,8 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 			// call progress only on master based on tasks completed
 			if (wc->cbs.progress && num_tasks > 0) {
 				double percent = ((double)(100.0 * tasks_completed)) / num_tasks;
-				if (percent <= 100.0)
-					wc->cbs.progress((float)percent, wc->cbs.user);
+				percent = (percent > 100.0) ? 100.0 : percent;
+				wc->cbs.progress((float)percent, wc->cbs.user);
 			}
 		} else {
 			WC_WARN("Received unexpected message for tag (%x) from slave(%d)\n",
@@ -1352,13 +1353,15 @@ do { \
 			uint64_t tasks_completed = 0;
 			uint32_t idx;
 			uint64_t num_tasks = 0;
+			uint64_t start, end;
 
 			tasks_completed = 0;
 			num_tasks = wc->my_task_range[1] - wc->my_task_range[0];
 			if (num_tasks == 0)
 				break;
+			start = wc->my_task_range[0];
+			end = 0;
 			do {
-				uint64_t start, end;
 				rc = WC_EXE_OK;
 				wc->refcount = 0;
 				wc->userevent = (cl_event)0;
@@ -1368,8 +1371,6 @@ do { \
 					WC_WARN("User event failed to create. Shaky state\n");
 					break;
 				}
-				start = wc->my_task_range[0];
-				end = 0;
 				for (idx = 0; idx < wc->ocl.device_max; ++idx) {
 					uint64_t tasks4device;
 					wc_cldev_t *dev = &(wc->ocl.devices[idx]);
@@ -1385,6 +1386,7 @@ do { \
 					device_results[idx].error = WC_EXE_OK;
 					device_results[idx].data.ptr = NULL;
 					device_results[idx].data.len = 0;
+					WC_DEBUG("Range: [%"PRIu64", %"PRIu64")\n", start, end);
 					rc = wc->cbs.on_device_range_exec(wc, dev, idx,
 							wc->cbs.user, &wc->globaldata, start, end,
 							&device_events[idx]);
