@@ -198,7 +198,7 @@ int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
 	if (!user->md5sum) {
 		WC_NULL("\n");
 		WC_ERROR("You need to provide an MD5 sum to crack.\n");
-		crackmd5_user_usage(argv[0]);
+		crackmd5_user_usage(appname);
 		rc = -1;
 	}
 	return rc;
@@ -419,16 +419,17 @@ wc_err_t crackmd5_on_recv_global(const wc_exec_t *wc, void *user,
 {
 	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	if (gdata && gdata->ptr) {
+		int i;
 		const crackmd5_global_t *gd = NULL;
 		gd = (const crackmd5_global_t *)gdata->ptr;
 		WC_INFO("Global prefix: ");
-		for (int i = 0; i < 16; ++i) {
+		for (i = 0; i < 16; ++i) {
 			if (gd->input.s[i])
 				WC_NULL("%c", gd->input.s[i]);
 		}
 		WC_NULL("\n");
 		WC_INFO("Digest: ");
-		for (int i = 0; i < 16; ++i) {
+		for (i = 0; i < 16; ++i) {
 			WC_NULL("%x", gd->digest.s[i]);
 		}
 		WC_NULL("\n");
