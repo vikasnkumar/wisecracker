@@ -18,10 +18,15 @@ export OPENCL_ROOT=/opt/nvidia/gpu_sdk/OpenCL
 export MPIPATH=/usr/lib64/openmpi/bin
 export PATH=${PATH}:${MPIPATH}
 if test -d ${OPENCL_ROOT} && test -d ${MPIPATH} ; then
+	echo "===================================================================================="
 	echo "Please add the following line to your .bashrc or .profile"
 	echo "export OPENCL_ROOT=${OPENCL_ROOT}"
 	echo "export PATH=\${PATH}:${MPIPATH}"
+	echo "You might need to reboot your VM as well to allow for the NVIDIA module to work"
+	echo "===================================================================================="
 else
+	echo "===================================================================================="
 	echo "Something went wrong. ${OPENCL_ROOT} or ${MPIPATH} was not created by the yum install"
+	echo "===================================================================================="
 	exit 1
 fi
