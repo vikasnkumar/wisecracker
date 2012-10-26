@@ -695,13 +695,11 @@ int main(int argc, char **argv)
 		struct timeval tv1, tv2;
 		wc_util_timeofday(&tv1);
 		crackmd5_user_init(&user);
-		if (wc_executor_system_id(wc) == 0) {
-			if (crackmd5_user_parse(argc, argv, &user) < 0) {
-				WC_ERROR("Unable to parse arguments.\n");
-				return -1;
-			}
-			crackmd5_user_dump(&user);
+		if (crackmd5_user_parse(argc, argv, &user) < 0) {
+			WC_ERROR("Unable to parse arguments.\n");
+			return -1;
 		}
+		crackmd5_user_dump(&user);
 		// set up the callbacks for distribution
 		memset(&callbacks, 0, sizeof(callbacks));
 		callbacks.user = &user;
