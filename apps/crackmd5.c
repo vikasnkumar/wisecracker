@@ -96,8 +96,8 @@ int crackmd5_user_usage(const char *app)
 	printf("\n\t-v <value>\tLog level:\n"
 			"\t\t\t0 - ERROR\n"
 			"\t\t\t1 - WARN\n"
-			"\t\t\t2 - INFO\n"
-			"\t\t\t3 - DEBUG (Default)\n");
+			"\t\t\t2 - INFO (Default)\n"
+			"\t\t\t3 - DEBUG\n");
 	printf("\n\t-f <filename>\tCustom OpenCL code to run. Optional.\n");
 	printf("\n\t-m <value>\tMaximum devices to use, 0 (default) for all.\n");
 	printf("\n\t-c\t\tUse CPU only if available. Default any.\n");
@@ -133,6 +133,7 @@ void crackmd5_user_init(crackmd5_user_t *user)
 	user->nchars = 8;
 	user->md5sum = NULL;
 	user->prefix = NULL;
+	WC_SET_LOG_LEVEL(WC_LOGLEVEL_INFO);
 }
 
 int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
@@ -140,7 +141,7 @@ int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
 	int opt = -1;
 	int rc = 0;
 	const char *appname = NULL;
-	int loglevel = WC_LOGLEVEL_DEBUG;
+	int loglevel = WC_LOGLEVEL_INFO;
 	if (!argv || !user)
 		return -1;
 	appname = WC_BASENAME(argv[0]);
