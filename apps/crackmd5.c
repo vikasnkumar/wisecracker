@@ -79,6 +79,7 @@ typedef struct {
 	cl_uchar16 input;
 	cl_uchar16 digest;
 	cl_uint charset; // an integer copy of the charset
+	uint8_t nchars;
 } crackmd5_global_t;
 
 typedef struct {
@@ -115,13 +116,11 @@ int crackmd5_user_usage(const char *app)
 	exit(1);
 }
 
-int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
+void crackmd5_user_init(crackmd5_user_t *user)
 {
-	int opt = -1;
-	int rc = 0;
-	const char *appname = NULL;
-	if (!argv || !user)
-		return -1;
+	if (!user)
+		return;
+	memset(user, 0, sizeof(crackmd5_user_t));
 	user->cl_filename = NULL;
 	user->max_devices = 0;
 	user->device_type = WC_DEVTYPE_ANY;
@@ -129,6 +128,15 @@ int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
 	user->nchars = 8;
 	user->md5sum = NULL;
 	user->prefix = NULL;
+}
+
+int crackmd5_user_parse(int argc, char **argv, crackmd5_user_t *user)
+{
+	int opt = -1;
+	int rc = 0;
+	const char *appname = NULL;
+	if (!argv || !user)
+		return -1;
 	appname = WC_BASENAME(argv[0]);
 	while ((opt = getopt(argc, argv, "hgcm:f:M:p:C:N:")) != -1) {
 		switch (opt) {
@@ -359,6 +367,8 @@ wc_err_t crackmd5_on_finish(const wc_exec_t *wc, void *user)
 	if (cuser) {
 		WC_FREE(cuser->devices);
 		cuser->num_devices = 0;
+		WC_DEBUG("Number of kernels executed: %"PRIu64"\n",
+				cuser->kernelcounter);
 	} else {
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	}
@@ -389,6 +399,7 @@ wc_err_t crackmd5_get_global_data(const wc_exec_t *wc, void *user,
 							wc_md5_decoder[(int)cuser->md5sum[idx + 1]];
 
 	gd->charset = (cl_uint)cuser->charset;
+	gd->nchars = cuser->nchars;
 	out->ptr = gd;
 	out->len = (uint32_t)sizeof(*gd);
 	return WC_EXE_OK;
@@ -401,6 +412,32 @@ void crackmd5_free_global_data(const wc_exec_t *wc, void *user,
 		WC_FREE(gdata->ptr);
 		gdata->len = 0;
 	}
+}
+
+wc_err_t crackmd5_on_recv_global(const wc_exec_t *wc, void *user,
+				const wc_data_t *gdata)
+{
+	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
+	if (gdata && gdata->ptr) {
+		const crackmd5_global_t *gd = NULL;
+		gd = (const crackmd5_global_t *)gdata->ptr;
+		WC_INFO("Global prefix: ");
+		for (int i = 0; i < 16; ++i) {
+			if (gd->input.s[i])
+				WC_NULL("%c", gd->input.s[i]);
+		}
+		WC_NULL("\n");
+		WC_INFO("Digest: ");
+		for (int i = 0; i < 16; ++i) {
+			WC_NULL("%x", gd->digest.s[i]);
+		}
+		WC_NULL("\n");
+		WC_INFO("Charset: %s\n", wc_util_charset_tostring(gd->charset));
+		WC_INFO("No. of chars: %d\n", gd->nchars);
+		cuser->nchars = gd->nchars;
+		cuser->charset = gd->charset;
+	}
+	return WC_EXE_OK;
 }
 
 uint32_t crackmd5_get_multiplier(const wc_exec_t *wc, void *user)
@@ -444,7 +481,7 @@ wc_err_t crackmd5_on_device_start(const wc_exec_t *wc, wc_cldev_t *dev,
 		cl_uint argc = 0;
 		struct crackmd5_per_device *cpd = &cuser->devices[devindex];
 
-		cpd->nchars = cuser->nchars;
+		cpd->nchars = gd->nchars;
 		// create the kernel and memory objects per device
 		cpd->kernel = clCreateKernel(dev->program, wc_md5_cl_kernel, &rc);
 		WC_ERROR_OPENCL_BREAK(clCreateKernel, rc);
@@ -505,21 +542,17 @@ wc_err_t crackmd5_on_device_range_exec(const wc_exec_t *wc, wc_cldev_t *dev,
 		memset(&(cpd->match), 0, sizeof(cl_uchar16));
 		// check for global_work_offset_limit here and adjust stride
 		if ((cpd->work_offset + cpd->work_size) >= offset_limit) {
-			WC_DEBUG("Work offset: %"PRIu64" size: %"PRIu64" for device[%u]\n",
-					(uint64_t)cpd->work_offset, (uint64_t)cpd->work_size, devindex);
+//			WC_DEBUG("Work offset: %"PRIu64" size: %"PRIu64" for device[%u]\n",
+//					(uint64_t)cpd->work_offset, (uint64_t)cpd->work_size, devindex);
 			// this is more efficient rather than using the offset
 			cpd->stride = cpd->work_offset;
 			cpd->work_offset = 0;
-//			while ((cpd->work_offset + cpd->work_size) >= offset_limit) {
-//				cpd->stride += offset_limit;
-//				cpd->work_offset = cpd->work_offset + cpd->work_size - offset_limit;
-//			}
 			rc |= clSetKernelArg(cpd->kernel, cpd->stride_argc,
 					sizeof(cl_ulong), &cpd->stride);
 			WC_ERROR_OPENCL_BREAK(clSetKernelArg, rc);
-			WC_DEBUG("Global work offset reset to %"PRIu64". Stride: %"PRIu64"\n",
-					(uint64_t)cpd->work_offset, cpd->stride);
-			WC_DEBUG("Reset for kernel number: %"PRIu64"\n", cuser->kernelcounter);
+//			WC_DEBUG("Global work offset reset to %"PRIu64". Stride: %"PRIu64"\n",
+//					(uint64_t)cpd->work_offset, cpd->stride);
+//			WC_DEBUG("Reset for kernel number: %"PRIu64"\n", cuser->kernelcounter);
 		}
 		// enqueue the mem-write for the device
 		rc = clEnqueueWriteBuffer(dev->cmdq, cpd->mem, CL_FALSE,
@@ -660,7 +693,7 @@ int main(int argc, char **argv)
 	do {
 		struct timeval tv1, tv2;
 		wc_util_timeofday(&tv1);
-		memset(&user, 0, sizeof(user));
+		crackmd5_user_init(&user);
 		if (wc_executor_system_id(wc) == 0) {
 			if (crackmd5_user_parse(argc, argv, &user) < 0) {
 				WC_ERROR("Unable to parse arguments.\n");
@@ -681,6 +714,7 @@ int main(int argc, char **argv)
 		callbacks.get_task_range_multiplier = crackmd5_get_multiplier;
 		callbacks.on_code_compile = crackmd5_on_compile;
 		callbacks.get_global_data = crackmd5_get_global_data;
+		callbacks.on_receive_global_data = crackmd5_on_recv_global;
 		callbacks.on_device_start = crackmd5_on_device_start;
 		callbacks.on_device_finish = crackmd5_on_device_finish;
 		callbacks.on_device_range_exec = crackmd5_on_device_range_exec;

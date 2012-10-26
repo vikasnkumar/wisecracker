@@ -605,6 +605,7 @@ static wc_err_t wc_executor_slave_pre_run(wc_exec_t *wc)
 				rc = WC_EXE_ERR_OUTOFMEMORY;
 				break;
 			}
+			memset(wc->globaldata.ptr, 0, wc->globaldata.len);
 			err = wc_mpi_broadcast(wc->globaldata.ptr, (int)wc->globaldata.len,
 									MPI_BYTE, 0);
 			if (err < 0) {
@@ -1311,7 +1312,7 @@ static wc_err_t wc_executor_slave_send_complete()
 	return WC_EXE_OK;
 }
 
-static wc_err_t wc_executor_slave_check_stop()
+static wc_err_t wc_executor_slave_check_stop(const wc_exec_t *wc)
 {
 	int flag = 0;
 	wc_mpistatus_t status = { 0 };
@@ -1374,6 +1375,7 @@ do { \
 			uint32_t idx;
 			uint64_t num_tasks = 0;
 			uint64_t start, end;
+			wc_err_t slverr = WC_EXE_OK;
 
 			tasks_completed = 0;
 			num_tasks = wc->my_task_range[1] - wc->my_task_range[0];
@@ -1481,6 +1483,8 @@ do { \
 						} else {
 							device_results[idx].error = WC_EXE_OK;
 						}
+						if (device_results[idx].error == WC_EXE_STOP)
+							slverr = WC_EXE_STOP;
 					}
 					// first serialize the data into 1 buffer
 					// as opposed to using multiple buffers of varying lengths
@@ -1508,10 +1512,15 @@ do { \
 				} while (0);
 				if (rc != WC_EXE_OK)
 					break;
-				// check for message from master before looping
-				rc = wc_executor_slave_check_stop();
-				if (rc != WC_EXE_OK)
+				if (slverr != WC_EXE_STOP) {
+					// check for message from master before looping
+					rc = wc_executor_slave_check_stop(wc);
+					if (rc != WC_EXE_OK)
+						break;
+				} else {
+					rc = slverr;
 					break;
+				}
 			} while (tasks_completed < num_tasks);
 			if (rc != WC_EXE_OK)
 				break;
@@ -1522,7 +1531,7 @@ do { \
 		rc = wc_executor_device_finish(wc);
 		if (rc != WC_EXE_OK)
 			break;
-		rc = wc_executor_slave_check_stop();
+		rc = wc_executor_slave_check_stop(wc);
 		if (rc != WC_EXE_OK)
 			break;
 		rc = wc_executor_slave_send_complete();
