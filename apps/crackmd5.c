@@ -472,7 +472,7 @@ void crackmd5_progress(float percent, void *user)
 			wc_util_timeofday(&cuser->tv2);
 			ttinterval = WC_TIME_TAKEN(cuser->tv1, cuser->tv2);
 			WC_INFO("Progress: %.02f%% Estimated Remaining Time: %lf seconds\n",
-					percent, ttinterval * (100.0 - percent) / 100.0);
+					percent, ttinterval * (100.0 - percent) / percent);
 		}
 	}
 }
