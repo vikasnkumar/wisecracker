@@ -175,6 +175,7 @@ wc_err_t wc_executor_setup(wc_exec_t *wc, const wc_exec_callbacks_t *cbs)
 			WC_ERROR("Wisecracker needs the get_code, get_num_tasks and"
 					" on_device_range_exec callbacks.\n");
 			wc->callbacks_set = 0;
+			return WC_EXE_ERR_MISSING_CALLBACK;
 		} else {
 			uint32_t data[2];
 			wc_devtype_t devtype;

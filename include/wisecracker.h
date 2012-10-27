@@ -28,6 +28,9 @@
 #include <wisecracker/macros.h>
 #include <wisecracker/executor.h>
 #include <wisecracker/utils.h>
+#ifdef __cplusplus
+	#include <wisecracker/cppwrapper.h>
+#endif // __cplusplus
 
 #endif //__WISECRACKER_WISECRACKER_H__
 

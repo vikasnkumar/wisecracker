@@ -149,6 +149,12 @@ int wc_util_timeofday(struct timeval *tv)
 	}
 	return -1;
 }
+#else
+int wc_util_timeofday(struct timeval *tv)
+{
+	return gettimeofday(tv, NULL);
+}
+#endif
 
 char *wc_util_strdup(const char *str)
 {
@@ -165,17 +171,3 @@ char *wc_util_strdup(const char *str)
 	}
 	return out;
 }
-
-#else
-
-int wc_util_timeofday(struct timeval *tv)
-{
-	return gettimeofday(tv, NULL);
-}
-
-char *wc_util_strdup(const char *str)
-{
-	return strdup(str);
-}
-
-#endif

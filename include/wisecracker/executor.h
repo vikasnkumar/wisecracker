@@ -75,35 +75,35 @@ typedef struct {
 	void *user;
 	uint32_t max_devices;
 	wc_devtype_t device_type;
-	wc_err_t (*on_start)(const wc_exec_t *wc, void *user);
-	wc_err_t (*on_finish)(const wc_exec_t *wc, void *user);
-	char *(*get_code)(const wc_exec_t *wc, void *user, size_t *codelen);
-	char *(*get_build_options)(const wc_exec_t *wc, void *user);
-	void (*on_code_compile)(const wc_exec_t *wc, void *user, uint8_t success);
+	wc_err_t (WC_CALLBACK *on_start)(const wc_exec_t *wc, void *user);
+	wc_err_t (WC_CALLBACK *on_finish)(const wc_exec_t *wc, void *user);
+	char *(WC_CALLBACK *get_code)(const wc_exec_t *wc, void *user, size_t *codelen);
+	char *(WC_CALLBACK *get_build_options)(const wc_exec_t *wc, void *user);
+	void (WC_CALLBACK *on_code_compile)(const wc_exec_t *wc, void *user, uint8_t success);
 
-	uint64_t (*get_num_tasks)(const wc_exec_t *wc, void *user);
-	uint32_t (*get_task_range_multiplier)(const wc_exec_t *wc, void *user);
-	wc_err_t (*get_global_data)(const wc_exec_t *wc, void *user,
+	uint64_t (WC_CALLBACK *get_num_tasks)(const wc_exec_t *wc, void *user);
+	uint32_t (WC_CALLBACK *get_task_range_multiplier)(const wc_exec_t *wc, void *user);
+	wc_err_t (WC_CALLBACK *get_global_data)(const wc_exec_t *wc, void *user,
 						wc_data_t *out);
-	wc_err_t (*on_receive_global_data)(const wc_exec_t *wc, void *user,
+	wc_err_t (WC_CALLBACK *on_receive_global_data)(const wc_exec_t *wc, void *user,
 						const wc_data_t *gdata);
 
-	wc_err_t (*on_device_start)(const wc_exec_t *wc, wc_cldev_t *dev,
+	wc_err_t (WC_CALLBACK *on_device_start)(const wc_exec_t *wc, wc_cldev_t *dev,
 						uint32_t devindex, void *user, const wc_data_t *gdata);
-	wc_err_t (*on_device_finish)(const wc_exec_t *wc, wc_cldev_t *dev,
+	wc_err_t (WC_CALLBACK *on_device_finish)(const wc_exec_t *wc, wc_cldev_t *dev,
 						uint32_t devindex, void *user, const wc_data_t *gdata);
-	wc_err_t (*on_device_range_exec)(const wc_exec_t *wc, wc_cldev_t *dev,
+	wc_err_t (WC_CALLBACK *on_device_range_exec)(const wc_exec_t *wc, wc_cldev_t *dev,
 						uint32_t devindex, void *user, const wc_data_t *gdata,
 						uint64_t start, uint64_t end, cl_event *out_event);
-	wc_err_t (*on_device_range_done)(const wc_exec_t *wc, wc_cldev_t *dev,
+	wc_err_t (WC_CALLBACK *on_device_range_done)(const wc_exec_t *wc, wc_cldev_t *dev,
 						uint32_t devindex, void *user, const wc_data_t *gdata,
 						uint64_t start, uint64_t end, wc_data_t *results);
-	wc_err_t (*on_receive_range_results)(const wc_exec_t *wc, void *user,
+	wc_err_t (WC_CALLBACK *on_receive_range_results)(const wc_exec_t *wc, void *user,
 						uint64_t start, uint64_t end, wc_err_t slverr,
 						const wc_data_t *results);
-	void (*free_global_data)(const wc_exec_t *wc, void *user,
+	void (WC_CALLBACK *free_global_data)(const wc_exec_t *wc, void *user,
 						wc_data_t *gdata);
-	void (*progress)(float percent, void *user);
+	void (WC_CALLBACK *progress)(float percent, void *user);
 } wc_exec_callbacks_t;
 
 WCDLL wc_exec_t *wc_executor_init(int *argc, char ***argv);
@@ -125,8 +125,6 @@ WCDLL uint64_t wc_executor_num_tasks(const wc_exec_t *wc);
 WCDLL uint32_t wc_executor_num_devices(const wc_exec_t *wc);
 
 WCDLL void wc_executor_dump(const wc_exec_t *wc);
-
-
 
 EXTERN_C_END
 

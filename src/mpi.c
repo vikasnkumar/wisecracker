@@ -38,16 +38,42 @@
 
 int wc_mpi_init(int *argc, char ***argv)
 {
-	int rc = MPI_Init(argc, argv);
-	WC_HANDLE_MPI_ERROR(MPI_Init, rc);
-	if (rc == MPI_SUCCESS)
-		rc |= MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
+	int rc = 0;
+	int flag = 0;
+	if (MPI_Finalized(&flag) == MPI_SUCCESS) {
+		if (flag != 0) {
+			WC_ERROR("MPI has already been finalized.\n");
+			return -1;
+		}
+	}
+	flag = 0;
+	if (MPI_Initialized(&flag) == MPI_SUCCESS) {
+		if (flag == 0) {
+			rc = MPI_Init(argc, argv);
+			WC_HANDLE_MPI_ERROR(MPI_Init, rc);
+			if (rc == MPI_SUCCESS)
+				rc |= MPI_Comm_set_errhandler(MPI_COMM_WORLD, MPI_ERRORS_RETURN);
+			return rc;
+		} else {
+			rc = 0;
+		}
+	} else {
+		WC_HANDLE_MPI_ERROR(MPI_Initialized, rc);
+	}
 	return rc;
 }
 
 int wc_mpi_finalize()
 {
-	int rc = MPI_Finalize();
+	int rc = 0;
+	int flag = 0;
+	if (MPI_Finalized(&flag) == MPI_SUCCESS) {
+		if (flag != 0) {
+			WC_DEBUG("MPI has already been finalized.\n");
+			return 0;
+		}
+	}
+	rc = MPI_Finalize();
 	WC_HANDLE_MPI_ERROR(MPI_Finalize, rc);
 	return (rc == MPI_SUCCESS) ? 0 : -1;
 }

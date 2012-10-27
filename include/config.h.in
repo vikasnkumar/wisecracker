@@ -52,6 +52,9 @@
                 #define __func__ __FUNCTION__
             #endif
 	#endif
+	#ifndef WC_CALLBACK
+		#define WC_CALLBACK CALLBACK
+	#endif
 	#define _CRT_SECURE_NO_WARNINGS
 #else // not WIN32
     #ifndef APIENTRY
@@ -63,7 +66,12 @@
 	#ifndef CALLBACK
 		#define CALLBACK
 	#endif
-	#define _GNU_SOURCE
+	#ifndef WC_CALLBACK
+		#define WC_CALLBACK CALLBACK
+	#endif
+	#ifndef _GNU_SOURCE
+		#define _GNU_SOURCE
+	#endif
 #endif
 
 EXTERN_C_BEGIN
@@ -214,6 +222,10 @@ EXTERN_C_BEGIN
 #endif
 
 #cmakedefine WC_MPI_H
+
+// for C++ wrappers
+#cmakedefine WC_CXX_STRING
+#cmakedefine WC_CXX_STDEXCEPT
 
 EXTERN_C_END
 #endif // __WC_CONFIG_H__

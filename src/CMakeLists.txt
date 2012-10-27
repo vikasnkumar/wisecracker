@@ -18,7 +18,7 @@
 ### AUTHOR: Vikas Kumar
 ### DATE: 25th August 2011
 #########################################################################
-project(wisecracker C)
+project(wisecracker)
 
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR})
@@ -28,7 +28,7 @@ if (NOT WC_GETOPT_H)
 	set(UTIL_SRCS ${UTIL_SRCS} getopt.c)
 endif (NOT WC_GETOPT_H)
 
-set(RUNTIME_SRCS executor.c mpi.c opencl.c)
+set(RUNTIME_SRCS executor.c mpi.c opencl.c wrapper.cpp)
 add_library(wisecracker_s STATIC ${RUNTIME_SRCS} ${UTIL_SRCS})
 target_link_libraries(wisecracker_s ${OPENCL_LIBS} ${OS_LIBS})
 if (USE_MPI)

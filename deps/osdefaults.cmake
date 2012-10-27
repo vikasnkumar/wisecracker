@@ -21,7 +21,7 @@
 
 if (CMAKE_COMPILER_IS_GNUCXX OR CMAKE_COMPILER_IS_GNUC)
 	set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -fPIC -pedantic -std=c99 -Wno-comment")
-	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -pedantic -Wno-comment")
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -fPIC -pedantic -Wno-variadic-macros")
 	if (CMAKE_BUILD_TYPE STREQUAL "Debug")
 		message(STATUS "Performing Debug build using GCC suite")
 		set(CMAKE_C_FLAGS_DEBUG "${CMAKE_C_FLAGS_DEBUG} -O0")
@@ -84,6 +84,8 @@ check_include_file("pthread.h" WC_PTHREAD_H)
 if (APPLE)
 	check_include_file("libgen.h" WC_LIBGEN_H)
 endif (APPLE)
+check_include_file_cxx("string" WC_CXX_STRING)
+check_include_file_cxx("stdexcept" WC_CXX_STDEXCEPT)
 # this is temporary for just verification
 if (USE_OPENSSL)
 	include(FindOpenSSL)
