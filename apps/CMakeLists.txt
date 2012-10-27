@@ -43,6 +43,7 @@ if (USE_OPENSSL)
 	target_link_libraries(wisetestmd5 wisecracker_s ${OPENSSL_LIBRARIES})
 	# this is needed since we link with static
 	set_target_properties(wisetestmd5 PROPERTIES COMPILE_FLAGS "-DWC_LINKING_STATIC")
+	add_test(wisetestmd5 wisetestmd5)
 	install(TARGETS wisetestmd5 RUNTIME DESTINATION bin)
 endif (USE_OPENSSL)
 

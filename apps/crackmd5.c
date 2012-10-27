@@ -69,7 +69,6 @@ typedef struct {
 	struct timeval tv1;
 	struct timeval tv2;
 	double prev_progress;
-	double ttinterval;
 	// store the result in this
 	uint8_t found;
 	cl_uchar16 match;
@@ -369,7 +368,6 @@ wc_err_t crackmd5_on_start(const wc_exec_t *wc, void *user)
 		cuser->kernelcounter = 0;
 		wc_util_timeofday(&cuser->tv1);
 		cuser->prev_progress = 0.0;
-		cuser->ttinterval = -1.0;
 	} else {
 		return WC_EXE_ERR_INVALID_PARAMETER;
 	}
@@ -469,13 +467,12 @@ void crackmd5_progress(float percent, void *user)
 	crackmd5_user_t *cuser = (crackmd5_user_t *)user;
 	if (cuser) {
 		if ((percent - cuser->prev_progress) > 0.5) {
+			double ttinterval = 0;
 			cuser->prev_progress = percent;
-			if (cuser->ttinterval < 0.0) {
-				wc_util_timeofday(&cuser->tv2);
-				cuser->ttinterval = WC_TIME_TAKEN(cuser->tv1, cuser->tv2);
-			}
+			wc_util_timeofday(&cuser->tv2);
+			ttinterval = WC_TIME_TAKEN(cuser->tv1, cuser->tv2);
 			WC_INFO("Progress: %.02f%% Estimated Remaining Time: %lf seconds\n",
-					percent, cuser->ttinterval * (100.0 - percent));
+					percent, ttinterval * (100.0 - percent) / 100.0);
 		}
 	}
 }
