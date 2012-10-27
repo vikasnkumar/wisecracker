@@ -76,8 +76,6 @@ struct wc_executor_details {
 	cl_event userevent;
 };
 
-static int wc_mst_loop_breaker = 0; // for the master thread loop
-
 typedef struct {
 	uint64_t start;
 	uint64_t end;
@@ -239,6 +237,8 @@ static wc_err_t wc_executor_pre_run(wc_exec_t *wc)
 			rc = WC_EXE_ERR_MISSING_CALLBACK;
 			break;
 		}
+		// XXX: if the master is not going to be on an OpenCL machine
+		// then this should not be an error. but that is not the case today
 		if (!wc->ocl_initialized) {
 			if (wc_opencl_init(wc->cbs.device_type, wc->cbs.max_devices,
 						&wc->ocl, 0) < 0) {
@@ -359,7 +359,12 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 			break;
 		}
 		memset(wc->all_tasks4system, 0, sizeof(uint64_t) * wc->num_systems);
-		wc->my_tasks4system = wc_executor_tasks4system(&wc->ocl);
+		if (wc->num_systems > 1) {
+			// not in single system mode
+			wc->my_tasks4system = 0;
+		} else {
+			wc->my_tasks4system = wc_executor_tasks4system(&wc->ocl);
+		}
 		wc->all_tasks4system[wc->system_id] = wc->my_tasks4system;
 		// receive the data from all systems using MPI_Gather
 		if (wc->mpi_initialized) {
@@ -488,17 +493,29 @@ static wc_err_t wc_executor_master_pre_run(wc_exec_t *wc)
 			num_rounds = 1;
 		WC_DEBUG("no. of rounds %"PRIu64"\n", num_rounds);
 		// create system task ranges
-		start = end = 0;
-		for (idx = 0; idx < wc->num_systems; ++idx) {
-			end += wc->all_tasks4system[idx] * wc->task_range_multiplier *
-					num_rounds;
-			wc->task_ranges[2 * idx] = start;
-			wc->task_ranges[2 * idx + 1] = end;
-			if (end >= wc->num_tasks) {
-				wc->task_ranges[2 * idx + 1] = wc->num_tasks;
-				break;
+		if (wc->num_systems == 1) {
+			// single system does all tasks
+			wc->task_ranges[0] = 0;
+			wc->task_ranges[1] = wc->num_tasks;
+		} else {
+			start = end = 0;
+			// the 0th id is master and doesn't need anything
+			for (idx = 0; idx < wc->num_systems; ++idx) {
+				if (idx == 0) {
+					end = 0;
+					start = 0;
+				} else {
+					end += wc->all_tasks4system[idx] *
+							wc->task_range_multiplier * num_rounds;
+				}
+				wc->task_ranges[2 * idx] = start;
+				wc->task_ranges[2 * idx + 1] = end;
+				if (end >= wc->num_tasks) {
+					wc->task_ranges[2 * idx + 1] = wc->num_tasks;
+					break;
+				}
+				start = end;
 			}
-			start = end;
 		}
 		wc->state = WC_EXECSTATE_DATA_DECOMPOSED;
 		wc->my_task_range[0] = wc->task_ranges[2 * wc->system_id];
@@ -1080,7 +1097,7 @@ static wc_resultsdata_t *wc_resultsdata_deserialize(const wc_data_t *data,
 }
 
 // we want to split the master_run into 2 functions
-WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
+wc_err_t wc_executor_master_receiver(void *arg)
 {
 	wc_err_t rc = WC_EXE_OK;
 	wc_exec_t *wc = (wc_exec_t *)arg;
@@ -1096,21 +1113,21 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 	int completed_systems = 0;
 	num_systems = wc_executor_num_systems(wc);
 	if (!wc || num_systems <= 0) {
-		WC_ERROR("Thread argument was invalid\n");
-		return (WC_THREAD_RETURN)0;
+		WC_ERROR("Receiver argument was invalid\n");
+		return WC_EXE_ERR_INVALID_PARAMETER;
 	}
 	// at a time we can send only num_systems requests
 	stoppings = WC_MALLOC(sizeof(wc_mpirequest_t) * num_systems);
 	if (!stoppings) {
 		WC_ERROR_OUTOFMEMORY(sizeof(wc_mpirequest_t) * num_systems);
-		return (WC_THREAD_RETURN)0;
+		return WC_EXE_ERR_OUTOFMEMORY;
 	}
 	memset(stoppings, 0, sizeof(wc_mpirequest_t) * num_systems);
 	completions = WC_MALLOC(sizeof(wc_mpirequest_t) * num_systems);
 	if (!completions) {
 		WC_FREE(stoppings);
 		WC_ERROR_OUTOFMEMORY(sizeof(wc_mpirequest_t) * num_systems);
-		return (WC_THREAD_RETURN)0;
+		return WC_EXE_ERR_OUTOFMEMORY;
 	}
 	memset(completions, 0, sizeof(wc_mpirequest_t) * num_systems);
 	slaves_completed = WC_MALLOC(sizeof(int) * num_systems);
@@ -1118,7 +1135,7 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 		WC_FREE(stoppings);
 		WC_FREE(completions);
 		WC_ERROR_OUTOFMEMORY(sizeof(int) * num_systems);
-		return (WC_THREAD_RETURN)0;
+		return WC_EXE_ERR_OUTOFMEMORY;
 	}
 	memset(slaves_completed, 0, sizeof(int) * num_systems);
 	num_tasks = wc->num_tasks;
@@ -1126,6 +1143,12 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 	completed_systems = 0;
 	for (sdx = 0; sdx < num_systems; ++sdx) {
 		slaves_completed[sdx] = 0;
+		if (sdx == wc->system_id) {
+			// the master is already complete
+			slaves_completed[sdx] = 1;
+			completed_systems++;
+			continue;
+		}
 		if (wc_mpi_irecv(&slaves_completed[sdx], 1, MPI_INT, sdx,
 					WC_TAG_SLV_COMPLETED, &completions[sdx]) < 0) {
 			WC_WARN("Unable to recv slave completion for slave: %d\n", sdx);
@@ -1134,7 +1157,7 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 			completed_systems++;
 		}
 	}
-	while (!wc_mst_loop_breaker) {
+	while (1) {
 		int flag = 0;
 		wc_mpistatus_t status = { 0 };
 		rc = WC_EXE_OK;
@@ -1151,7 +1174,7 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 		// from the loop.
 		for (sdx = 0; sdx < num_systems && completed_systems < num_systems;
 			++sdx) {
-			if (slaves_completed[sdx] == 0) {
+			if (slaves_completed[sdx] == 0 && sdx != wc->system_id) {
 				flag = 0;
 				if (wc_mpi_test(&completions[sdx], &flag) < 0) {
 					WC_WARN("unable to test for completion of slave: %d\n",
@@ -1274,6 +1297,9 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 			int rdx = 0;
 			wc_err_t stoprc = WC_EXE_STOP;
 			for (idx = 0; idx < num_systems; ++idx) {
+				// we never send to master since master is completed
+				if (idx == wc->system_id)
+					continue;
 				if (slaves_completed[idx] == 1)
 					continue;
 				if (wc_mpi_isend(&stoprc, 1, MPI_INT, idx,
@@ -1298,7 +1324,7 @@ WC_THREAD_RETURN wc_executor_master_receiver(void *arg)
 	// abort the MPI Run if there was a problem here
 	if (rc != WC_EXE_OK && rc != WC_EXE_STOP)
 		wc_mpi_abort(rc);
-	return (WC_THREAD_RETURN)0;
+	return rc;
 }
 
 static wc_err_t wc_executor_slave_send_complete()
@@ -1549,17 +1575,8 @@ do { \
 static wc_err_t wc_executor_master_system_run(wc_exec_t *wc)
 {
 	wc_err_t rc = WC_EXE_OK;
-	wc_thread_t thread = (wc_thread_t)0;
-	if (WC_THREAD_CREATE(&thread, wc_executor_master_receiver, wc) != 0) {
-		WC_ERROR("Failed to create master receiver thread.\n");
-		return WC_EXE_ERR_SYSTEM;
-	}
 	// the master is its own slave as well since it does work too
-	rc = wc_executor_slave_system_run(wc);
-	WC_DEBUG("slave run on the master is complete.\n");
-	wc_mst_loop_breaker = 1;
-	if (thread)
-		WC_THREAD_JOIN(&thread);
+	rc = wc_executor_master_receiver(wc);
 	if (rc == WC_EXE_STOP)
 		rc = WC_EXE_OK;
 	return rc;
