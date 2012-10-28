@@ -97,7 +97,7 @@ namespace wc {
 
 		virtual uint64_t get_num_tasks() = 0;
 
-		virtual uint64_t get_task_multiplier()
+		virtual uint32_t get_task_multiplier()
 		{
 			return 1;
 		}
