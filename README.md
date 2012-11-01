@@ -72,5 +72,4 @@ the docs/ directory of the source code.
 We understand that the software might be deficient in some aspects, but software
 evolves and so will Wisecracker.
 
-Thanks for trying it out,
-The development team at Selective Intellect LLC.
+Thanks for trying it out.
