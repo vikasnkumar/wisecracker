@@ -1,11 +1,37 @@
 Wisecracker
 ===========
 
-Wisecracker is a collection of simple cryptanalysis tools. The aim is to expand
-this software into a larger code base for performing easy cryptanalysis using
-distributed computing power such as that provided by OpenCL. It is licensed
-under the GPLv3. If you want to license it under another license, please contact
-the developers at Selective Intellect LLC at <github@selectiveintellect.com>.
+Large scale brute force cryptanalysis needs a tremendous amount of computational
+power that government agencies like the NSA and companies like Google have.
+
+An average security researcher might want to have such capabilities as well but
+they do not have the tools or the computational resources. Moreover, they might
+not be skilled in writing software that takes advantage of the computational
+resources provided by commercial-off-the-shelf systems with CUDA and OpenCL
+capable GPUs and computational clusters provided by Amazon EC2 and Microsoft 
+Azure.
+
+With Wisecracker we bridge this gap by providing an open source framework for
+security researchers to write their own cryptanalysis tools that can distribute
+brute force cryptanalysis work across multiple systems with multiple multi-core
+processors and GPUs. Security researchers can also use the sample tools
+provided as part of Wisecracker out-of-the-box.
+
+The differentiating aspect of Wisecracker is that it uses OpenCL and MPI
+together to distribute the work across multiple systems each having
+multiple CPUs and/or GPUs. We support the OpenCL libraries provided by
+Intel, AMD and NVIDIA, and support multiple operating systems such as Linux,
+Microsoft Windows and Mac OSX.
+
+Wisecracker is licensed under the GNU General Public License version 3 and is
+free for anyone to use and enhance. 
+
+More information on the design details can be found at
+http://selectiveintellect.com/wisecracker.html .
+
+The developers at Selective Intellect LLC would like to hear from you about
+Wisecracker if you like it or need a different license or need technical
+support. You can contact them at <wisecracker@selectiveintellect.com>.
 
 0. How to build the software
 =============================
@@ -15,48 +41,33 @@ The current system is only supported on Linux, Mac OSX and Windows. However the
 software will work only in 64-bit mode and hence you will need a 64-bit capable
 operating system to compile and run it.
 
-1. WisecrackMD5
+1. License
+===========
+
+The software license is GNU General Public License version 3. You can find the
+license in the COPYRIGHT file of the source code.
+
+2. API Documentation
+====================
+
+The API documentation can be found in the docs/ directory or on the website
+http://selectiveintellect.com/wisecracker.html
+
+3. Current Stable Version
+==========================
+
+The current stable version is 1.0.
+
+4. Technical Details and Usage
+================================
+
+This information can be downloaded from
+http://selectiveintellect.com/wisecracker_whitepaper.pdf or can be taken from
+the docs/ directory of the source code.
+
+
+5. Final Comments
 ================
-
-WisecrackMD5 is a simple program that uses OpenCL to perform parallel MD5
-cracking for 8-character passwords. The aim is to be able to take an MD5 sum and
-reverse it into the 8 characters that created the sum in the first place.
-
-Let us take the situation where the user ends up finding a database with MD5
-sums of all the passwords from a random website. The user decides to crack such
-passwords to get access to those accounts, similar to Jack the Ripper software.
-Let us assume that the password is of maximum 8-character length.
-
-The user provides an MD5 checksum for which they want to find an 8-character
-password that might match the checksum.
-
-The search space for characters is currently [A-Za-z0-9_$]. We will add more
-characters later and allow for < 8 password matching as well when time permits.
-
-To use wisecrackmd5, the user provides an MD5 sum and also guesses a prefix of
-maybe 1 or 2 or more characters as a guess of the starting value and the program
-finds the rest of the characters by executing on the GPU in parallel. If you
-have a CPU based OpenCL installation it will use the CPU instead of the GPU.
-
-It can take anything from milliseconds to a few hundred seconds depending on the
-size of the prefix to guess the correct 8 characters.
-
-To look at the possible commandline options:
-$ ./wisecrackmd5  -h
-
-To test the software with an MD5 sum one can try:
-
-$ ./wisecrackmd5 -p abcd -M a3118ebd990c3506ddd1a77be6962faf -N 8 -C alnumspl
-
-This will find the correct string "abcd9_Z$" that gives the MD5 sum
-a3118ebd990c3506ddd1a77be6962faf in about 5-6 seconds.
-
-The user can try giving a shorter prefix such as 'abc' or 'ab' or 'a' to try out
-how long it takes for a GPU or CPU cluster using OpenCL to reverse the MD5 sum.
-
-The user can then massively parallelize by running multiple instances of
-wisecrackmd5 with different prefixes of say 1 character each on a large cluster
-that supports OpenCL and be able to retrieve passwords much faster.
 
 We understand that the software might be deficient in some aspects, but software
 evolves and so will Wisecracker.
