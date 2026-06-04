@@ -1562,7 +1562,7 @@ do { \
 		if (rc != WC_EXE_OK)
 			break;
 		rc = wc_executor_slave_send_complete();
-		if (rc != WC_EXE_OK);
+		if (rc != WC_EXE_OK)
 			break;
 	} while (0);
 	WC_FREE(device_events);
