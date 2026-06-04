@@ -72,25 +72,25 @@ int wc_mpi_peer_count();
 
 int wc_mpi_peer_id();
 
-int wc_mpi_broadcast(void *buffer, int count, void *datatype, int id);
+int wc_mpi_broadcast(void *buffer, int count, MPI_Datatype datatype, int id);
 
-int wc_mpi_gather(void *sendbuf, int scount, void *sendtype, void *recvbuf,
-					int rcount, void *recvtype, int master_id);
+int wc_mpi_gather(void *sendbuf, int scount, MPI_Datatype sendtype, void *recvbuf,
+					int rcount, MPI_Datatype recvtype, int master_id);
 
-int wc_mpi_scatter(void *sendbuf, int scound, void *sendtype, void *recvbuf,
-					int rcount, void *recvtype, int master_id);
+int wc_mpi_scatter(void *sendbuf, int scound, MPI_Datatype sendtype, void *recvbuf,
+					int rcount, MPI_Datatype recvtype, int master_id);
 
 int wc_mpi_iprobe(int src_id, int tag, int *flag, wc_mpistatus_t *status);
 
-int wc_mpi_irecv(void *buffer, int count, void *datatype, int src_id, int tag,
+int wc_mpi_irecv(void *buffer, int count, MPI_Datatype datatype, int src_id, int tag,
 				wc_mpirequest_t *req);
 
-int wc_mpi_recv(void *buffer, int count, void *datatype, int src_id, int tag);
+int wc_mpi_recv(void *buffer, int count, MPI_Datatype datatype, int src_id, int tag);
 
-int wc_mpi_isend(void *buffer, int count, void *datatype, int dest_id, int tag,
+int wc_mpi_isend(void *buffer, int count, MPI_Datatype datatype, int dest_id, int tag,
 				wc_mpirequest_t *req);
 
-int wc_mpi_send(void *buffer, int count, void *datatype, int dest_id, int tag);
+int wc_mpi_send(void *buffer, int count, MPI_Datatype datatype, int dest_id, int tag);
 
 int wc_mpi_test(wc_mpirequest_t *req, int *flag);
 
@@ -98,6 +98,6 @@ int wc_mpi_waitall(int count, wc_mpirequest_t *reqarray);
 
 int wc_mpi_waitany(int count, wc_mpirequest_t *reqarray, int *index);
 
-int wc_mpi_get_count(wc_mpistatus_t *status, void *datatype, int *count);
+int wc_mpi_get_count(wc_mpistatus_t *status, MPI_Datatype datatype, int *count);
 
 #endif // __WISECRACKER_MPI_INTERNAL_H__

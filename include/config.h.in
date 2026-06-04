@@ -222,6 +222,9 @@ EXTERN_C_BEGIN
 #endif
 
 #cmakedefine WC_MPI_H
+#ifndef WC_MPI_H
+typedef void * MPI_Datatype;
+#endif
 
 // for C++ wrappers
 #cmakedefine WC_CXX_STRING

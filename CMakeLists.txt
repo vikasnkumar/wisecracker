@@ -19,7 +19,8 @@
 ### DATE: 21st Dec 2011
 ### SOFTWARE: Wisecracker 
 #########################################################################
-cmake_minimum_required(VERSION 2.6)
+cmake_minimum_required(VERSION 3.5)
+project(wisecracker)
 
 #CMake default includes
 include(CTest)
