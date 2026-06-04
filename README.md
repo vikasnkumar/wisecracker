@@ -26,7 +26,7 @@ Wisecracker is licensed under the GNU General Public License version 3 and is
 free for anyone to use and enhance. 
 
 More information on the design details can be found at
-<https://selectiveintellect.github.io/wisecracker.html> .
+<https://selectiveintellect.github.io/main/wisecracker.html> .
 
 The developers at Selective Intellect LLC would like to hear from you about
 Wisecracker if you like it or need a different license or need technical
@@ -47,7 +47,7 @@ license in the COPYRIGHT file of the source code.
 ### API Documentation
 
 The API documentation can be found in the docs/ directory or on the website
-<https://selectiveintellect.github.io/wisecracker.html> .
+<https://selectiveintellect.github.io/main/wisecracker.html> .
 
 ### Current Stable Version
 
