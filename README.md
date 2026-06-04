@@ -1,5 +1,4 @@
-Wisecracker
-===========
+# Wisecracker
 
 Large scale brute force cryptanalysis needs a tremendous amount of computational
 power that government agencies like the NSA and companies like Google have.
@@ -33,41 +32,35 @@ The developers at Selective Intellect LLC would like to hear from you about
 Wisecracker if you like it or need a different license or need technical
 support. You can contact them at <wisecracker@selectiveintellect.com>.
 
-0. How to build the software
-=============================
+### How to build the software
 
 Please read the INSTALL file to perform the build.
 The current system is only supported on Linux, Mac OSX and Windows. However the
 software will work only in 64-bit mode and hence you will need a 64-bit capable
 operating system to compile and run it.
 
-1. License
-===========
+### License
 
 The software license is GNU General Public License version 3. You can find the
 license in the COPYRIGHT file of the source code.
 
-2. API Documentation
-====================
+### API Documentation
 
 The API documentation can be found in the docs/ directory or on the website
 <https://selectiveintellect.github.io/wisecracker.html> .
 
-3. Current Stable Version
-==========================
+### Current Stable Version
 
-The current stable version is 1.0.
+The current stable version is 1.1.
 
-4. Technical Details and Usage
-================================
+### Technical Details and Usage
 
 This information can be downloaded from
 <http://www.selectiveintellect.net/s/WisecrackerWhitepaper.pdf> or can be taken from
 the `docs/` directory of the source code.
 
 
-5. Final Comments
-================
+### Final Comments
 
 We understand that the software might be deficient in some aspects, but software
 evolves and so will Wisecracker.
